@@ -1,6 +1,6 @@
 declare module "*.scss" {
   const cssstyle: {
-    [string]: string;
+    [key: string]: string;
   };
   export default cssstyle;
 }
