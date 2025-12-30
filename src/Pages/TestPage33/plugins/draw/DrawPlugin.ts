@@ -1,7 +1,7 @@
 import { Rect } from "fabric";
 import { BasePlugin } from "../base/Plugin";
 import { EditorMode } from "../mode/ModePlugin";
-import { Category } from "../../core";
+import { Category, genId } from "../../core";
 
 /**
  * 绘制插件
@@ -104,8 +104,10 @@ export class DrawPlugin extends BasePlugin {
             ry: 4,
         });
 
-        // 给对象打分类标记
-        this.editor.category.set(this.currentRect, Category.DrawRect);
+        // 给对象打分类标记，包含唯一ID
+        this.editor.category.set(this.currentRect, Category.DrawRect, {
+            id: genId("rect"),
+        });
 
         this.canvas.requestRenderAll();
         this.eventBus.emit("draw:complete", this.currentRect);

@@ -1,11 +1,12 @@
 import { type FabricObject } from "fabric";
 import { BasePlugin } from "../base/Plugin";
+import { CoordinateHelper, Category } from "../../core";
 import type { ToolbarPosition } from "../../core/types";
-import { CoordinateHelper } from "../../core";
+import { EditorMode } from "../mode/ModePlugin";
 
 /**
  * 选择插件
- * 功能：对象选择、浮动工具栏定位
+ * 功能：对象选择、浮动工具栏定位、管理对象可选状态
  * 事件：selection:change, toolbar:update
  */
 export class SelectionPlugin extends BasePlugin {
@@ -25,9 +26,50 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.on("object:scaling", this.updateToolbar);
     this.canvas.on("object:rotating", this.updateToolbar);
     this.canvas.on("object:modified", this.updateToolbar);
+    this.canvas.on("object:added", this.onObjectAdded);
 
-    // 监听缩放变化，更新工具栏位置
+    // 监听模式变化
+    this.eventBus.on("mode:change", this.onModeChange);
+    // 监听缩放变化
     this.eventBus.on("zoom:change", this.updateToolbar);
+  }
+
+  /**
+   * 模式变化时更新对象可选状态
+   */
+  private onModeChange = ({ mode }: { mode: EditorMode }): void => {
+    const selectable = mode === EditorMode.Select;
+    this.setObjectsSelectable(selectable);
+  };
+
+  /**
+   * 新对象添加时设置可选状态（只处理 DrawRect）
+   */
+  private onObjectAdded = (opt: any): void => {
+    const obj = opt.target;
+    if (!obj) return;
+
+    const isDrawRect = this.editor.category.is(obj, Category.DrawRect);
+    if (!isDrawRect) return;
+
+    const modePlugin = this.editor.getPlugin<any>("mode");
+    const isSelectMode = modePlugin?.mode === EditorMode.Select;
+    obj.selectable = isSelectMode;
+    obj.evented = isSelectMode;
+  };
+
+  /**
+   * 设置所有 DrawRect 对象的可选状态
+   */
+  private setObjectsSelectable(selectable: boolean): void {
+    this.canvas.getObjects().forEach((obj) => {
+      const isDrawRect = this.editor.category.is(obj, Category.DrawRect);
+      if (!isDrawRect) return;
+
+      obj.selectable = selectable;
+      obj.evented = selectable;
+      obj.setCoords();
+    });
   }
 
   private onSelectionCreated = (opt: any): void => {
@@ -130,5 +172,8 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.off("object:scaling", this.updateToolbar);
     this.canvas.off("object:rotating", this.updateToolbar);
     this.canvas.off("object:modified", this.updateToolbar);
+    this.canvas.off("object:added", this.onObjectAdded);
+    this.eventBus.off("mode:change", this.onModeChange);
+    this.eventBus.off("zoom:change", this.updateToolbar);
   }
 }

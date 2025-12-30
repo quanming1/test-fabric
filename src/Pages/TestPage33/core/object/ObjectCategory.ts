@@ -43,4 +43,11 @@ export class ObjectCategory {
     getAll(category: Category): FabricObject[] {
         return this.canvas.getObjects().filter((obj) => this.is(obj, category));
     }
+
+    /**
+     * 根据 ID 获取对象
+     */
+    getById(id: string): FabricObject | undefined {
+        return this.canvas.getObjects().find((obj) => (obj as any).data?.id === id);
+    }
 }

@@ -1,5 +1,3 @@
-import type { FabricObject } from "fabric";
-
 /** 标记点样式配置 */
 export interface MarkerStyle {
     /** 圆点半径 */
@@ -32,13 +30,12 @@ export const DEFAULT_MARKER_STYLE: MarkerStyle = {
     hoverFill: "#40a9ff",
 };
 
-/** 标记点内部数据（含缓存的对象引用） */
+/** 标记点内部数据 */
 export interface MarkerData {
     id: string;
+    /** 关联的矩形 ID */
     rectId: string;
     /** 归一化坐标 (0~1) */
     nx: number;
     ny: number;
-    /** 缓存的目标对象 */
-    target?: FabricObject;
 }

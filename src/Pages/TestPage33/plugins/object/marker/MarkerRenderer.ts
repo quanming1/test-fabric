@@ -1,6 +1,7 @@
 import { Circle, Text, Group, type Canvas } from "fabric";
 import type { MarkerData, MarkerStyle } from "./types";
 import { DEFAULT_MARKER_STYLE } from "./types";
+import { Category, type ObjectCategory } from "../../../core";
 
 /**
  * 标记点渲染器
@@ -8,17 +9,25 @@ import { DEFAULT_MARKER_STYLE } from "./types";
  */
 export class MarkerRenderer {
     private canvas: Canvas;
+    private category: ObjectCategory;
     private style: MarkerStyle;
     private groups = new Map<string, Group>();
 
-    constructor(canvas: Canvas, style: Partial<MarkerStyle> = {}) {
+    constructor(canvas: Canvas, category: ObjectCategory, style: Partial<MarkerStyle> = {}) {
         this.canvas = canvas;
+        this.category = category;
         this.style = { ...DEFAULT_MARKER_STYLE, ...style };
+    }
+
+    /** 获取当前缩放比例 */
+    private getZoom(): number {
+        return this.canvas.getZoom() || 1;
     }
 
     /** 同步标记点状态 */
     sync(markers: MarkerData[]): void {
         const activeIds = new Set(markers.map((m) => m.id));
+        const inverseZoom = 1 / this.getZoom();
 
         // 移除失效的
         for (const [id, group] of this.groups) {
@@ -35,10 +44,15 @@ export class MarkerRenderer {
 
             const group = this.groups.get(marker.id);
             if (group) {
-                group.set(pos);
+                // 更新位置和缩放
+                group.set({
+                    ...pos,
+                    scaleX: inverseZoom,
+                    scaleY: inverseZoom,
+                });
                 this.setLabel(group, i + 1);
             } else {
-                this.createMarker(marker.id, pos, i + 1);
+                this.createMarker(marker.id, pos, i + 1, inverseZoom);
             }
         });
 
@@ -72,7 +86,7 @@ export class MarkerRenderer {
 
     // ─── Private ─────────────────────────────────────────
 
-    private createMarker(id: string, pos: { left: number; top: number }, label: number): void {
+    private createMarker(id: string, pos: { left: number; top: number }, label: number, scale: number): void {
         const { radius, fill, stroke, strokeWidth, textColor, fontSize } = this.style;
 
         const circle = new Circle({
@@ -95,6 +109,8 @@ export class MarkerRenderer {
 
         const group = new Group([circle, text], {
             ...pos,
+            scaleX: scale,
+            scaleY: scale,
             originX: "center",
             originY: "center",
             selectable: false,
@@ -103,26 +119,27 @@ export class MarkerRenderer {
             hoverCursor: "pointer",
         });
 
-        // 自定义属性
-        (group as any).__isMarker = true;
-        (group as any).__markerId = id;
+        // 使用分类系统标记
+        this.category.set(group, Category.Marker, { markerId: id });
 
-        this.bindHover(group, circle);
+        this.bindHover(group, circle, scale);
         this.canvas.add(group);
         this.groups.set(id, group);
     }
 
-    private bindHover(group: Group, circle: Circle): void {
+    private bindHover(group: Group, circle: Circle, baseScale: number): void {
         const { hoverScale, hoverFill, fill } = this.style;
 
         group.on("mouseover", () => {
-            group.set({ scaleX: hoverScale, scaleY: hoverScale });
+            const inverseZoom = 1 / this.getZoom();
+            group.set({ scaleX: inverseZoom * hoverScale, scaleY: inverseZoom * hoverScale });
             circle.set("fill", hoverFill);
             this.canvas.requestRenderAll();
         });
 
         group.on("mouseout", () => {
-            group.set({ scaleX: 1, scaleY: 1 });
+            const inverseZoom = 1 / this.getZoom();
+            group.set({ scaleX: inverseZoom, scaleY: inverseZoom });
             circle.set("fill", fill);
             this.canvas.requestRenderAll();
         });
@@ -136,7 +153,10 @@ export class MarkerRenderer {
     }
 
     private getPosition(marker: MarkerData): { left: number; top: number } | null {
-        const { target, nx, ny } = marker;
+        const { rectId, nx, ny } = marker;
+
+        // 通过 ID 查找目标对象
+        const target = this.category.getById(rectId);
         if (!target?.width || !target?.height) return null;
 
         const w = target.width;
