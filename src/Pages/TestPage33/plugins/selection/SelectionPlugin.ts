@@ -96,6 +96,7 @@ export class SelectionPlugin extends BasePlugin {
   bringToFront(): void {
     if (this.activeObject) {
       this.canvas.bringObjectToFront(this.activeObject);
+      this.eventBus.emit("layer:change");
       this.canvas.requestRenderAll();
     }
   }
@@ -104,6 +105,7 @@ export class SelectionPlugin extends BasePlugin {
   sendToBack(): void {
     if (this.activeObject) {
       this.canvas.sendObjectToBack(this.activeObject);
+      this.eventBus.emit("layer:change");
       this.canvas.requestRenderAll();
     }
   }

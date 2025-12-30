@@ -29,6 +29,7 @@ export interface EditorEvents {
   "toolbar:update": (pos: ToolbarPosition) => void;
   "markers:change": (markers: MarkPoint[]) => void;
   "markers:viewUpdate": (views: Record<string, PointView>) => void;
+  "layer:change": () => void;
   resize: (size: { width: number; height: number }) => void;
 }
 

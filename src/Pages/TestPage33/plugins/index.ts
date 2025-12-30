@@ -8,4 +8,5 @@ export { ZoomPlugin } from "./viewport/ZoomPlugin";
 export { SelectionPlugin } from "./selection/SelectionPlugin";
 
 // Object
-export { MarkerPlugin } from "./object/MarkerPlugin";
+export { MarkerPlugin, MarkerRenderer } from "./object/marker";
+export type { MarkerStyle, MarkerData } from "./object/marker";
