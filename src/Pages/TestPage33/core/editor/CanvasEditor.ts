@@ -2,7 +2,7 @@ import { Canvas } from "fabric";
 import { EventBus } from "../event/EventBus";
 import type { EditorOptions } from "../types";
 import type { Plugin } from "../../plugins";
-import { ObjectCategory } from "../object/ObjectCategory";
+import { ObjectMetadata } from "../object/ObjectMetadata";
 
 /**
  * 核心编辑器类
@@ -11,7 +11,7 @@ import { ObjectCategory } from "../object/ObjectCategory";
 export class CanvasEditor {
     canvas: Canvas;
     eventBus = new EventBus();
-    category: ObjectCategory;
+    metadata: ObjectMetadata;
     private plugins = new Map<string, Plugin>();
     private _destroyed = false;
 
@@ -22,7 +22,7 @@ export class CanvasEditor {
             selection: true,
             ...options,
         });
-        this.category = new ObjectCategory(this.canvas);
+        this.metadata = new ObjectMetadata(this.canvas);
     }
 
     /** 注册插件（链式调用） */

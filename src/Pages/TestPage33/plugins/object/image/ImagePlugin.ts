@@ -31,7 +31,7 @@ export class ImagePlugin extends BasePlugin {
         const obj = opt.target;
         if (!obj) return;
 
-        const isImage = this.editor.category.is(obj, Category.Image);
+        const isImage = this.editor.metadata.is(obj, "category", Category.Image);
         if (!isImage) return;
 
         const modePlugin = this.editor.getPlugin<any>("mode");
@@ -44,7 +44,9 @@ export class ImagePlugin extends BasePlugin {
      * 设置所有图片的可选状态
      */
     private setImagesSelectable(selectable: boolean): void {
-        this.editor.category.getAll(Category.Image).forEach((obj) => {
+        this.editor.metadata.filter("category", Category.Image).forEach((obj) => {
+            console.log(obj);
+
             obj.selectable = selectable;
             obj.evented = selectable;
             obj.setCoords();
@@ -111,8 +113,9 @@ export class ImagePlugin extends BasePlugin {
                 evented: true,
             });
 
-            // 标记分类
-            this.editor.category.set(img, Category.Image, {
+            // 标记元数据
+            this.editor.metadata.set(img, {
+                category: Category.Image,
                 id: genId("img"),
             });
 

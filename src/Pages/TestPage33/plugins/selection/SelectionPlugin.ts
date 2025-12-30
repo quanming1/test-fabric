@@ -1,6 +1,6 @@
-import { type FabricObject } from "fabric";
+import { type FabricObject, ActiveSelection } from "fabric";
 import { BasePlugin } from "../base/Plugin";
-import { CoordinateHelper, Category } from "../../core";
+import { CoordinateHelper, Category, genId } from "../../core";
 import type { ToolbarPosition } from "../../core/types";
 import { EditorMode } from "../mode/ModePlugin";
 
@@ -14,8 +14,23 @@ export class SelectionPlugin extends BasePlugin {
 
   private activeObject: FabricObject | null = null;
 
+  /** 当前选中对象（单选或 ActiveSelection） */
   get selected(): FabricObject | null {
     return this.activeObject;
+  }
+
+  /** 获取所有选中的对象数组（无论单选还是多选） */
+  get selectedObjects(): FabricObject[] {
+    if (!this.activeObject) return [];
+    if (this.activeObject instanceof ActiveSelection) {
+      return this.activeObject.getObjects();
+    }
+    return [this.activeObject];
+  }
+
+  /** 是否多选 */
+  get isMultiSelection(): boolean {
+    return this.activeObject instanceof ActiveSelection;
   }
 
   protected onInstall(): void {
@@ -49,7 +64,7 @@ export class SelectionPlugin extends BasePlugin {
     const obj = opt.target;
     if (!obj) return;
 
-    const isDrawRect = this.editor.category.is(obj, Category.DrawRect);
+    const isDrawRect = this.editor.metadata.is(obj, "category", Category.DrawRect);
     if (!isDrawRect) return;
 
     const modePlugin = this.editor.getPlugin<any>("mode");
@@ -63,7 +78,7 @@ export class SelectionPlugin extends BasePlugin {
    */
   private setObjectsSelectable(selectable: boolean): void {
     this.canvas.getObjects().forEach((obj) => {
-      const isDrawRect = this.editor.category.is(obj, Category.DrawRect);
+      const isDrawRect = this.editor.metadata.is(obj, "category", Category.DrawRect);
       if (!isDrawRect) return;
 
       obj.selectable = selectable;
@@ -72,14 +87,14 @@ export class SelectionPlugin extends BasePlugin {
     });
   }
 
-  private onSelectionCreated = (opt: any): void => {
-    this.activeObject = opt.selected?.[0] || null;
+  private onSelectionCreated = (): void => {
+    this.activeObject = this.canvas.getActiveObject() || null;
     this.eventBus.emit("selection:change", this.activeObject);
     requestAnimationFrame(() => this.updateToolbar());
   };
 
-  private onSelectionUpdated = (opt: any): void => {
-    this.activeObject = opt.selected?.[0] || null;
+  private onSelectionUpdated = (): void => {
+    this.activeObject = this.canvas.getActiveObject() || null;
     this.eventBus.emit("selection:change", this.activeObject);
     requestAnimationFrame(() => this.updateToolbar());
   };
@@ -112,56 +127,86 @@ export class SelectionPlugin extends BasePlugin {
     this.eventBus.emit("toolbar:update", pos);
   };
 
-  /** 复制当前选中对象 */
-  async cloneSelected(): Promise<FabricObject | null> {
-    if (!this.activeObject) return null;
+  /** 复制当前选中对象（支持多选） */
+  async cloneSelected(): Promise<FabricObject[]> {
+    const objects = this.selectedObjects;
+    if (objects.length === 0) return [];
 
     try {
-      const clone = await this.activeObject.clone();
-      clone.set({
-        left: (this.activeObject.left || 0) + 20,
-        top: (this.activeObject.top || 0) + 20,
-      });
-      this.canvas.add(clone);
-      this.canvas.setActiveObject(clone);
-      this.activeObject = clone;
+      const clones: FabricObject[] = [];
+
+      for (const obj of objects) {
+        const clone = await obj.clone();
+        clone.set({
+          left: (obj.left || 0) + 20,
+          top: (obj.top || 0) + 20,
+        });
+
+        // 克隆元数据并生成新 ID
+        this.editor.metadata.clone(obj, clone);
+
+        this.canvas.add(clone);
+        clones.push(clone);
+      }
+
+      // 多选时创建新的 ActiveSelection，单选时直接选中
+      if (clones.length > 1) {
+        const selection = new ActiveSelection(clones, { canvas: this.canvas });
+        this.canvas.setActiveObject(selection);
+        this.activeObject = selection;
+      } else if (clones.length === 1) {
+        this.canvas.setActiveObject(clones[0]);
+        this.activeObject = clones[0];
+      }
+
       this.canvas.requestRenderAll();
       requestAnimationFrame(() => this.updateToolbar());
-      return clone;
+      return clones;
     } catch (e) {
       console.error("Clone failed:", e);
-      return null;
+      return [];
     }
   }
 
-  /** 置顶 */
+  /** 置顶（支持多选） */
   bringToFront(): void {
-    if (this.activeObject) {
-      this.canvas.bringObjectToFront(this.activeObject);
-      this.eventBus.emit("layer:change");
-      this.canvas.requestRenderAll();
-    }
+    const objects = this.selectedObjects;
+    if (objects.length === 0) return;
+
+    objects.forEach((obj) => {
+      this.canvas.bringObjectToFront(obj);
+    });
+    this.eventBus.emit("layer:change");
+    this.canvas.requestRenderAll();
   }
 
-  /** 置底 */
+  /** 置底（支持多选） */
   sendToBack(): void {
-    if (this.activeObject) {
-      this.canvas.sendObjectToBack(this.activeObject);
-      this.eventBus.emit("layer:change");
-      this.canvas.requestRenderAll();
-    }
+    const objects = this.selectedObjects;
+    if (objects.length === 0) return;
+
+    // 反向遍历保持相对顺序
+    [...objects].reverse().forEach((obj) => {
+      this.canvas.sendObjectToBack(obj);
+    });
+    this.eventBus.emit("layer:change");
+    this.canvas.requestRenderAll();
   }
 
-  /** 删除选中对象 */
+  /** 删除选中对象（支持多选） */
   deleteSelected(): void {
-    if (this.activeObject) {
-      this.canvas.remove(this.activeObject);
-      this.canvas.discardActiveObject();
-      this.activeObject = null;
-      this.canvas.requestRenderAll();
-      this.eventBus.emit("selection:change", null);
-      this.eventBus.emit("toolbar:update", { x: 0, y: 0, visible: false });
-    }
+    const objects = this.selectedObjects;
+    if (objects.length === 0) return;
+
+    this.canvas.discardActiveObject();
+    objects.forEach((obj) => {
+      this.canvas.remove(obj);
+    });
+
+    this.activeObject = null;
+    this.canvas.requestRenderAll();
+    this.eventBus.emit("selection:change", null);
+    this.eventBus.emit("toolbar:update", { x: 0, y: 0, visible: false });
   }
 
   protected onDestroy(): void {

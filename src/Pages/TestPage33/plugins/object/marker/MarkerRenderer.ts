@@ -1,7 +1,7 @@
 import { Circle, Text, Group, type Canvas } from "fabric";
 import type { MarkerData, MarkerStyle } from "./types";
 import { DEFAULT_MARKER_STYLE } from "./types";
-import { Category, type ObjectCategory } from "../../../core";
+import { Category, type ObjectMetadata } from "../../../core";
 
 /**
  * 标记点渲染器
@@ -9,13 +9,13 @@ import { Category, type ObjectCategory } from "../../../core";
  */
 export class MarkerRenderer {
     private canvas: Canvas;
-    private category: ObjectCategory;
+    private metadata: ObjectMetadata;
     private style: MarkerStyle;
     private groups = new Map<string, Group>();
 
-    constructor(canvas: Canvas, category: ObjectCategory, style: Partial<MarkerStyle> = {}) {
+    constructor(canvas: Canvas, metadata: ObjectMetadata, style: Partial<MarkerStyle> = {}) {
         this.canvas = canvas;
-        this.category = category;
+        this.metadata = metadata;
         this.style = { ...DEFAULT_MARKER_STYLE, ...style };
     }
 
@@ -50,6 +50,8 @@ export class MarkerRenderer {
                     scaleX: inverseZoom,
                     scaleY: inverseZoom,
                 });
+                // 更新边界框坐标，否则 hover/click 检测会失效
+                group.setCoords();
                 this.setLabel(group, i + 1);
             } else {
                 this.createMarker(marker.id, pos, i + 1, inverseZoom);
@@ -86,7 +88,7 @@ export class MarkerRenderer {
 
     /** 设置所有标记点的 evented 状态 */
     setEvented(evented: boolean): void {
-        this.category.getAll(Category.Marker).forEach((obj) => {
+        this.metadata.filter("category", Category.Marker).forEach((obj) => {
             obj.evented = evented;
         });
     }
@@ -126,8 +128,8 @@ export class MarkerRenderer {
             hoverCursor: "pointer",
         });
 
-        // 使用分类系统标记
-        this.category.set(group, Category.Marker, { markerId: id });
+        // 使用元数据系统标记
+        this.metadata.set(group, { category: Category.Marker, id });
 
         this.bindHover(group, circle);
         this.canvas.add(group);
@@ -163,7 +165,7 @@ export class MarkerRenderer {
         const { targetId, nx, ny } = marker;
 
         // 通过 ID 查找目标对象
-        const target = this.category.getById(targetId);
+        const target = this.metadata.getById(targetId);
         if (!target?.width || !target?.height) return null;
 
         const w = target.width;

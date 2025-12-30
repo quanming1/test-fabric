@@ -104,8 +104,9 @@ export class DrawPlugin extends BasePlugin {
             ry: 4,
         });
 
-        // 给对象打分类标记，包含唯一ID
-        this.editor.category.set(this.currentRect, Category.DrawRect, {
+        // 给对象打元数据标记，包含唯一ID
+        this.editor.metadata.set(this.currentRect, {
+            category: Category.DrawRect,
             id: genId("rect"),
         });
 

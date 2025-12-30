@@ -14,7 +14,8 @@ export enum Category {
  * 对象元数据类型
  */
 export interface ObjectData {
-    category: Category;
-    /** 扩展字段 */
-    [key: string]: any;
+    /** 对象分类 */
+    category?: Category;
+    /** 对象唯一标识 */
+    id?: string;
 }

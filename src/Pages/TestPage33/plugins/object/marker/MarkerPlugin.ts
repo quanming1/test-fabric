@@ -29,7 +29,7 @@ export class MarkerPlugin extends BasePlugin {
     protected onInstall(): void {
         this.renderer = new MarkerRenderer(
             this.canvas,
-            this.editor.category,
+            this.editor.metadata,
             this.options.style
         );
         this.bindEvents();
@@ -63,7 +63,7 @@ export class MarkerPlugin extends BasePlugin {
      */
     private canMark(target: FabricObject): boolean {
         return this.markableCategories.some((cat) =>
-            this.editor.category.is(target, cat)
+            this.editor.metadata.is(target, "category", cat)
         );
     }
 
@@ -71,7 +71,7 @@ export class MarkerPlugin extends BasePlugin {
      * 获取目标对象的 ID
      */
     private getTargetId(target: FabricObject): string | null {
-        return this.editor.category.getData(target)?.id ?? null;
+        return this.editor.metadata.get(target)?.id ?? null;
     }
 
     /**

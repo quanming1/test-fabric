@@ -5,7 +5,7 @@ export { CanvasEditor } from "./editor/CanvasEditor";
 export { EventBus } from "./event/EventBus";
 
 // Object
-export { ObjectCategory } from "./object/ObjectCategory";
+export { ObjectMetadata } from "./object/ObjectMetadata";
 export { Category } from "./object/types";
 export type { ObjectData } from "./object/types";
 
