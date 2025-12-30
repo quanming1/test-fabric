@@ -3,6 +3,7 @@ import { EventBus } from "../event/EventBus";
 import type { EditorOptions } from "../types";
 import type { Plugin } from "../../plugins";
 import { ObjectMetadata } from "../object/ObjectMetadata";
+import { HotkeyManager } from "../hotkey/HotkeyManager";
 
 /**
  * 核心编辑器类
@@ -12,6 +13,7 @@ export class CanvasEditor {
     canvas: Canvas;
     eventBus = new EventBus();
     metadata: ObjectMetadata;
+    hotkey: HotkeyManager;
     private plugins = new Map<string, Plugin>();
     private _destroyed = false;
 
@@ -23,6 +25,7 @@ export class CanvasEditor {
             ...options,
         });
         this.metadata = new ObjectMetadata(this.canvas);
+        this.hotkey = new HotkeyManager();
     }
 
     /** 注册插件（链式调用） */
@@ -74,6 +77,7 @@ export class CanvasEditor {
         });
         this.plugins.clear();
         this.eventBus.clear();
+        this.hotkey.destroy();
         this.canvas.dispose();
     }
 
