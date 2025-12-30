@@ -6,81 +6,132 @@
   background: #f7f8fa;
 }
 
-.toolbar {
-  flex: 0 0 340px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-  border-right: 1px solid rgba(0, 0, 0, 0.08);
-  background: #fff;
-  overflow: hidden;
-  min-width: 260px;
-  max-width: 420px;
-}
-
-.toolbarTop {
+// 左侧工具栏 - 定位到画布左侧
+.toolbarLeft {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.subTitle {
-  color: rgba(0, 0, 0, 0.55);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.toolbarBlock {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.zoomBadge {
-  padding: 0 10px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.04);
-  color: rgba(0, 0, 0, 0.75);
-  font-variant-numeric: tabular-nums;
-}
-
-.tip {
-  margin-top: 8px;
   padding: 8px;
-  background: rgba(0, 0, 0, 0.02);
-  border-radius: 4px;
-  font-size: 12px;
-  color: rgba(0, 0, 0, 0.65);
-  line-height: 1.6;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  backdrop-filter: blur(8px);
+  z-index: 10;
 }
 
-.conceptBox {
-  margin-top: 8px;
-  padding: 12px;
-  background: rgba(24, 144, 255, 0.05);
+.toolBtn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #374151;
+  font-size: 16px;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #111827;
+  }
+
+  &:active {
+    background: rgba(0, 0, 0, 0.1);
+    transform: scale(0.95);
+  }
+
+  &.active {
+    background: #4f46e5;
+    color: #fff;
+
+    &:hover {
+      background: #4338ca;
+      color: #fff;
+    }
+  }
+
+  &.danger {
+    color: #dc2626;
+
+    &:hover {
+      background: rgba(220, 38, 38, 0.1);
+    }
+  }
+}
+
+.circleIcon {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.toolDivider {
+  width: 24px;
+  height: 1px;
+  margin: 4px auto;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+// 底部缩放控制 - 定位到画布底部
+.zoomBar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  backdrop-filter: blur(8px);
+  z-index: 10;
+}
+
+.zoomBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
   border-radius: 6px;
-  border: 1px solid rgba(24, 144, 255, 0.15);
+  cursor: pointer;
+  color: #374151;
+  font-size: 12px;
+  transition: all 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 }
 
-.conceptItem {
-  margin-bottom: 12px;
+.zoomValue {
+  min-width: 48px;
+  text-align: center;
   font-size: 12px;
-  line-height: 1.6;
-
-  &:last-child {
-    margin-bottom: 0;
-  }
-
-  > div {
-    margin-top: 4px;
-    padding-left: 12px;
-    color: rgba(0, 0, 0, 0.65);
-  }
+  font-weight: 500;
+  color: #374151;
+  font-variant-numeric: tabular-nums;
 }
 
 .stage {
@@ -141,6 +192,76 @@
     border-right: 6px solid transparent;
     border-top: 6px solid rgba(255, 255, 255, 0.98);
   }
+}
+
+// 浮动工具栏 - 选中对象时显示
+.floatingToolbar {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  pointer-events: auto;
+  z-index: 10;
+  backdrop-filter: blur(12px);
+  animation: toolbarFadeIn 0.15s ease;
+
+  &::after {
+    content: "";
+    position: absolute;
+    bottom: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid rgba(255, 255, 255, 0.95);
+  }
+}
+
+.floatingBtn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #374151;
+  font-size: 14px;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #111827;
+  }
+
+  &:active {
+    transform: scale(0.92);
+  }
+
+  &.danger {
+    color: #dc2626;
+
+    &:hover {
+      background: rgba(220, 38, 38, 0.08);
+      color: #b91c1c;
+    }
+  }
+}
+
+.floatingDivider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: rgba(0, 0, 0, 0.1);
 }
 
 @keyframes toolbarFadeIn {

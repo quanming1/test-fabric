@@ -1,4 +1,23 @@
-export { CanvasEditor } from "./CanvasEditor";
-export { EventBus } from "./EventBus";
-export * from "./types";
-export * from "./coordinateUtils";
+// Editor
+export { CanvasEditor } from "./editor/CanvasEditor";
+
+// Event
+export { EventBus } from "./event/EventBus";
+
+// Object
+export { ObjectCategory } from "./object/ObjectCategory";
+export { Category } from "./object/types";
+export type { ObjectData } from "./object/types";
+
+// Utils
+export { CoordinateHelper, type ScreenPoint } from "./utils/coordinateUtils";
+export { genId } from "./utils/genId";
+
+// Types
+export type {
+    MarkPoint,
+    ToolbarPosition,
+    PointView,
+    EditorEvents,
+    EditorOptions,
+} from "./types";

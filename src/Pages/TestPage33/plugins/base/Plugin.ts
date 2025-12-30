@@ -1,4 +1,4 @@
-import type { CanvasEditor } from "../../core/CanvasEditor";
+import { CanvasEditor } from "../../core";
 
 /**
  * 插件接口
@@ -39,7 +39,7 @@ export abstract class BasePlugin implements Plugin {
   }
 
   /** 子类实现具体销毁逻辑 */
-  protected onDestroy(): void {}
+  protected onDestroy(): void { }
 
   /** 快捷访问 canvas */
   protected get canvas() {

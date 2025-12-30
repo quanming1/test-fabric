@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { CanvasEditor } from "../core/CanvasEditor";
+import { CanvasEditor } from "../core";
 
 /**
  * 通用事件订阅 Hook

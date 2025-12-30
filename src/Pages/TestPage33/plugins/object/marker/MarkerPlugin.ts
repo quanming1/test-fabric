@@ -1,8 +1,8 @@
 import { Point, util, type FabricObject } from "fabric";
 import { BasePlugin } from "../../base/Plugin";
-import { genId, type MarkPoint } from "../../../core/types";
 import { MarkerRenderer } from "./MarkerRenderer";
 import type { MarkerData, MarkerStyle } from "./types";
+import { genId, MarkPoint } from "src/Pages/TestPage33/core";
 
 /**
  * 标记点插件（Canvas 渲染版本）

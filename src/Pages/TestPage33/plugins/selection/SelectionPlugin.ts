@@ -1,7 +1,7 @@
 import { type FabricObject } from "fabric";
 import { BasePlugin } from "../base/Plugin";
 import type { ToolbarPosition } from "../../core/types";
-import { CoordinateHelper } from "../../core/coordinateUtils";
+import { CoordinateHelper } from "../../core";
 
 /**
  * 选择插件

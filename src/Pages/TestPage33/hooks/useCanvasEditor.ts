@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Rect, Circle } from "fabric";
-import { CanvasEditor } from "../core/CanvasEditor";
-import { ZoomPlugin, SelectionPlugin, MarkerPlugin } from "../plugins";
+import { ZoomPlugin, SelectionPlugin, MarkerPlugin, ModePlugin, DrawPlugin } from "../plugins";
+import { CanvasEditor } from "../core";
 
 export interface UseCanvasEditorReturn {
   canvasElRef: React.RefObject<HTMLCanvasElement>;
@@ -30,8 +29,10 @@ export function useCanvasEditor(
 
     // 注册插件
     editorInstance
+      .use(new ModePlugin())
       .use(new ZoomPlugin())
       .use(new SelectionPlugin())
+      .use(new DrawPlugin())
       .use(new MarkerPlugin());
 
     // 响应式尺寸
@@ -48,30 +49,11 @@ export function useCanvasEditor(
     }
     resize();
 
-    // 添加初始示例对象
-    const rect1 = new Rect({
-      left: 100,
-      top: 100,
-      width: 80,
-      height: 80,
-      fill: "#1677ff",
-      rx: 8,
-      ry: 8,
-    });
 
-    const circle1 = new Circle({
-      left: 200,
-      top: 120,
-      radius: 40,
-      fill: "rgba(82,196,26,0.9)",
-    });
 
     // 注册 rect 到 MarkerPlugin
     const markerPlugin = editorInstance.getPlugin<MarkerPlugin>("marker");
-    markerPlugin?.registerObject(rect1);
 
-    editorInstance.canvas.add(rect1, circle1);
-    editorInstance.render();
 
     return () => {
       if (ro) ro.disconnect();

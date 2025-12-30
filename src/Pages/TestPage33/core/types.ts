@@ -1,4 +1,4 @@
-import type { Canvas, FabricObject } from "fabric";
+import type { FabricObject } from "fabric";
 
 /** 标记点数据 */
 export interface MarkPoint {
@@ -38,9 +38,4 @@ export interface EditorOptions {
   preserveObjectStacking?: boolean;
   stopContextMenu?: boolean;
   selection?: boolean;
-}
-
-/** 生成唯一 ID */
-export function genId(prefix = "id") {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`;
 }

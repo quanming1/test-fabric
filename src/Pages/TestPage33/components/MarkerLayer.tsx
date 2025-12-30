@@ -1,8 +1,8 @@
 import React from "react";
-import type { CanvasEditor } from "../core/CanvasEditor";
 import type { MarkPoint, PointView } from "../core/types";
 import { useEditorEvent } from "../hooks";
 import styles from "../index.module.scss";
+import { CanvasEditor } from "../core";
 
 interface MarkerLayerProps {
   editor: CanvasEditor | null;
