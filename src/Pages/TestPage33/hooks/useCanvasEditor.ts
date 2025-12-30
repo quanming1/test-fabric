@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ZoomPlugin, SelectionPlugin, MarkerPlugin, ModePlugin, DrawPlugin } from "../plugins";
+import { ZoomPlugin, SelectionPlugin, MarkerPlugin, ModePlugin, DrawPlugin, ImagePlugin } from "../plugins";
 import { CanvasEditor } from "../core";
 
 export interface UseCanvasEditorReturn {
@@ -33,7 +33,8 @@ export function useCanvasEditor(
       .use(new ZoomPlugin())
       .use(new SelectionPlugin())
       .use(new DrawPlugin())
-      .use(new MarkerPlugin());
+      .use(new MarkerPlugin())
+      .use(new ImagePlugin());
 
     // 响应式尺寸
     let ro: ResizeObserver | null = null;
@@ -48,13 +49,6 @@ export function useCanvasEditor(
       window.addEventListener("resize", resize);
     }
     resize();
-
-
-
-    // 注册 rect 到 MarkerPlugin
-    const markerPlugin = editorInstance.getPlugin<MarkerPlugin>("marker");
-
-
     return () => {
       if (ro) ro.disconnect();
       else window.removeEventListener("resize", resize);

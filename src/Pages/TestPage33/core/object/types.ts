@@ -6,6 +6,8 @@ export enum Category {
     DrawRect = "draw-rect",
     /** 标记点 */
     Marker = "marker",
+    /** 图片 */
+    Image = "image",
 }
 
 /**

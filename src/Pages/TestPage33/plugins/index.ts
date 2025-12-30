@@ -16,3 +16,4 @@ export { DrawPlugin } from "./draw/DrawPlugin";
 // Object
 export { MarkerPlugin, MarkerRenderer } from "./object/marker";
 export type { MarkerStyle, MarkerData } from "./object/marker";
+export { ImagePlugin } from "./object/image";

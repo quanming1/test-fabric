@@ -84,6 +84,13 @@ export class MarkerRenderer {
         this.style = { ...this.style, ...style };
     }
 
+    /** 设置所有标记点的 evented 状态 */
+    setEvented(evented: boolean): void {
+        this.category.getAll(Category.Marker).forEach((obj) => {
+            obj.evented = evented;
+        });
+    }
+
     // ─── Private ─────────────────────────────────────────
 
     private createMarker(id: string, pos: { left: number; top: number }, label: number, scale: number): void {
@@ -122,12 +129,12 @@ export class MarkerRenderer {
         // 使用分类系统标记
         this.category.set(group, Category.Marker, { markerId: id });
 
-        this.bindHover(group, circle, scale);
+        this.bindHover(group, circle);
         this.canvas.add(group);
         this.groups.set(id, group);
     }
 
-    private bindHover(group: Group, circle: Circle, baseScale: number): void {
+    private bindHover(group: Group, circle: Circle): void {
         const { hoverScale, hoverFill, fill } = this.style;
 
         group.on("mouseover", () => {
@@ -153,10 +160,10 @@ export class MarkerRenderer {
     }
 
     private getPosition(marker: MarkerData): { left: number; top: number } | null {
-        const { rectId, nx, ny } = marker;
+        const { targetId, nx, ny } = marker;
 
         // 通过 ID 查找目标对象
-        const target = this.category.getById(rectId);
+        const target = this.category.getById(targetId);
         if (!target?.width || !target?.height) return null;
 
         const w = target.width;

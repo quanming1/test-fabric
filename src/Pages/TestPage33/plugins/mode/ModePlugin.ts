@@ -36,7 +36,7 @@ export class ModePlugin extends BasePlugin {
         this.canvas.on("mouse:up", this.onMouseUp);
 
         // 初始化时应用默认模式设置
-        this.applyModeSettings(this._mode);
+        this.applyModeSettingsIntoCanvas(this._mode);
     }
 
     /**
@@ -49,7 +49,7 @@ export class ModePlugin extends BasePlugin {
         this._mode = mode;
 
         // 应用通用画布设置
-        this.applyModeSettings(mode);
+        this.applyModeSettingsIntoCanvas(mode);
 
         // 派发事件，让各 Plugin 自行处理
         this.eventBus.emit("mode:change", { mode, prevMode });
@@ -58,7 +58,7 @@ export class ModePlugin extends BasePlugin {
     /**
      * 通用画布设置（光标、框选、取消选择等）
      */
-    private applyModeSettings(mode: EditorMode): void {
+    private applyModeSettingsIntoCanvas(mode: EditorMode): void {
         switch (mode) {
             case EditorMode.Select:
                 this.canvas.selection = true;

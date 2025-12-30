@@ -33,9 +33,22 @@ export const DEFAULT_MARKER_STYLE: MarkerStyle = {
 /** 标记点内部数据 */
 export interface MarkerData {
     id: string;
-    /** 关联的矩形 ID */
-    rectId: string;
+    /** 关联的目标对象 ID */
+    targetId: string;
     /** 归一化坐标 (0~1) */
     nx: number;
     ny: number;
+}
+
+import { Category } from "../../../core";
+
+/** 标记点插件配置 */
+export interface MarkerPluginOptions {
+    /** 标记点样式 */
+    style?: Partial<MarkerStyle>;
+    /**
+     * 允许标记的对象分类列表
+     * 默认：[Category.DrawRect, Category.Image]
+     */
+    markableCategories?: Category[];
 }

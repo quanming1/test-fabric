@@ -1,13 +1,15 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import { Tooltip } from "antd";
 import {
   DragOutlined,
   BorderOutlined,
   DeleteOutlined,
   SelectOutlined,
+  PictureOutlined,
 } from "@ant-design/icons";
 import type { ModePlugin } from "../plugins/mode/ModePlugin";
 import type { MarkerPlugin } from "../plugins/object/marker/MarkerPlugin";
+import type { ImagePlugin } from "../plugins/object/image/ImagePlugin";
 import { EditorMode } from "../plugins/mode/ModePlugin";
 import { useEditorEvent } from "../hooks";
 import styles from "../index.module.scss";
@@ -46,15 +48,42 @@ interface ToolbarProps {
  */
 export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
   const modePlugin = editor?.getPlugin<ModePlugin>("mode");
+  const [showModePopup, setShowModePopup] = useState(false);
+  const modeButtonRef = useRef<HTMLDivElement>(null);
 
   // 订阅模式变化事件
   const modeData = useEditorEvent(editor, "mode:change", { mode: EditorMode.Select });
   const currentMode = modeData?.mode ?? EditorMode.Select;
 
+  // 点击外部关闭弹窗
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modeButtonRef.current && !modeButtonRef.current.contains(e.target as Node)) {
+        setShowModePopup(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   // ============ 模式切换 ============
   /** 切换到指定模式 */
   const handleModeChange = (mode: EditorMode) => {
     modePlugin?.setMode(mode);
+    setShowModePopup(false);
+  };
+
+  /** 模式选项配置 */
+  const modeOptions = [
+    { mode: EditorMode.Select, icon: <SelectOutlined />, label: "选择模式" },
+    { mode: EditorMode.Pan, icon: <DragOutlined />, label: "拖拽模式" },
+    { mode: EditorMode.DrawRect, icon: <BorderOutlined />, label: "绘制矩形" },
+  ];
+
+  /** 获取当前模式的图标 */
+  const getCurrentModeIcon = () => {
+    const option = modeOptions.find(opt => opt.mode === currentMode);
+    return option?.icon ?? <SelectOutlined />;
   };
 
   // ============ 其他操作 ============
@@ -66,37 +95,27 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     editor.getPlugin<MarkerPlugin>("marker")?.clearMarkers();
   };
 
+  /** 上传图片 */
+  const handleUploadImage = () => {
+    editor?.getPlugin<ImagePlugin>("image")?.openFilePicker();
+  };
+
   // ============ 工具栏配置 ============
   /**
    * 工具按钮分组配置
    * 每个子数组为一组，组之间会显示分隔线
    */
   const toolGroups: ToolItem[][] = useMemo(() => [
-    // 第一组：模式切换
+    // 第一组：上传图片
     [
-      { 
-        key: "select", 
-        icon: <SelectOutlined />, 
-        tooltip: "选择模式", 
-        mode: EditorMode.Select,
-      },
-      { 
-        key: "pan", 
-        icon: <DragOutlined />, 
-        tooltip: "拖拽模式", 
-        mode: EditorMode.Pan,
+      {
+        key: "upload-image",
+        icon: <PictureOutlined />,
+        tooltip: "上传图片",
+        onClick: handleUploadImage,
       },
     ],
-    // 第二组：绘制工具
-    [
-      { 
-        key: "draw-rect", 
-        icon: <BorderOutlined />, 
-        tooltip: "绘制矩形", 
-        mode: EditorMode.DrawRect,
-      },
-    ],
-    // 第三组：危险操作
+    // 第二组：危险操作
     [
       { 
         key: "clear", 
@@ -129,6 +148,32 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
   return (
     // 左侧工具栏 - 绝对定位到画布左侧垂直居中
     <div className={styles.toolbarLeft}>
+      {/* 模式切换按钮（带弹窗） */}
+      <div ref={modeButtonRef} className={styles.modeButtonWrapper}>
+          <button
+            className={`${styles.toolBtn} ${styles.active}`}
+            onClick={() => setShowModePopup(!showModePopup)}
+          >
+            {getCurrentModeIcon()}
+          </button>
+        {showModePopup && (
+          <div className={styles.modePopup}>
+            {modeOptions.map((option) => (
+              <div
+                key={option.mode}
+                className={`${styles.modeOption} ${currentMode === option.mode ? styles.active : ""}`}
+                onClick={() => handleModeChange(option.mode)}
+              >
+                {option.icon}
+                <span>{option.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className={styles.toolDivider} />
+
       {toolGroups.map((group, groupIndex) => (
         <React.Fragment key={groupIndex}>
           {/* 组之间添加分隔线 */}

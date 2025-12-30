@@ -1,0 +1,1 @@
+export { ImagePlugin } from "./ImagePlugin";
