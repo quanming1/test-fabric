@@ -1,7 +1,7 @@
 import { FabricImage } from "fabric";
 import { BasePlugin } from "../../base/Plugin";
 import { Category, genId } from "../../../core";
-import { EditorMode } from "../../mode/ModePlugin";
+import { EditorMode, ModePlugin } from "../../mode/ModePlugin";
 
 /**
  * 图片插件
@@ -129,6 +129,8 @@ export class ImagePlugin extends BasePlugin {
             if (modePlugin?.mode === EditorMode.Select) {
                 this.canvas.setActiveObject(img);
             }
+            // // 图片被添加之后，自动切换到选择模式
+            // this.editor.getPlugin<ModePlugin>("mode")?.setMode(EditorMode.Select);
             this.canvas.requestRenderAll();
 
             this.eventBus.emit("image:added", img);
@@ -139,21 +141,6 @@ export class ImagePlugin extends BasePlugin {
         }
     }
 
-    /**
-     * 打开文件选择器上传图片
-     */
-    openFilePicker(): void {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = "image/*";
-        input.onchange = async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (file) {
-                await this.addImageFromFile(file);
-            }
-        };
-        input.click();
-    }
 
     protected onDestroy(): void {
         this.canvas.off("object:added", this.onObjectAdded);

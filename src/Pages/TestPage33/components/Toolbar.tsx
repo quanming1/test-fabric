@@ -14,6 +14,7 @@ import { EditorMode } from "../plugins/mode/ModePlugin";
 import { useEditorEvent } from "../hooks";
 import styles from "../index.module.scss";
 import { CanvasEditor } from "../core";
+import { openFilePicker } from "../utils";
 
 /**
  * 工具项配置接口
@@ -43,7 +44,7 @@ interface ToolbarProps {
  * - 模式切换（选择/拖拽）
  * - 绘制工具（矩形）
  * - 清空画布
- * 
+ *
  * 采用配置化方式，通过 toolGroups 数组定义工具按钮
  */
 export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
@@ -82,7 +83,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
 
   /** 获取当前模式的图标 */
   const getCurrentModeIcon = () => {
-    const option = modeOptions.find(opt => opt.mode === currentMode);
+    const option = modeOptions.find((opt) => opt.mode === currentMode);
     return option?.icon ?? <SelectOutlined />;
   };
 
@@ -96,8 +97,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
   };
 
   /** 上传图片 */
-  const handleUploadImage = () => {
-    editor?.getPlugin<ImagePlugin>("image")?.openFilePicker();
+  const handleUploadImage = async () => {
+    const file = await openFilePicker({ accept: "image/*" });
+    if (file) {
+      await editor?.getPlugin<ImagePlugin>("image")?.addImageFromFile(file);
+    }
   };
 
   // ============ 工具栏配置 ============
@@ -105,27 +109,30 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
    * 工具按钮分组配置
    * 每个子数组为一组，组之间会显示分隔线
    */
-  const toolGroups: ToolItem[][] = useMemo(() => [
-    // 第一组：上传图片
-    [
-      {
-        key: "upload-image",
-        icon: <PictureOutlined />,
-        tooltip: "上传图片",
-        onClick: handleUploadImage,
-      },
+  const toolGroups: ToolItem[][] = useMemo(
+    () => [
+      // 第一组：上传图片
+      [
+        {
+          key: "upload-image",
+          icon: <PictureOutlined />,
+          tooltip: "上传图片",
+          onClick: handleUploadImage,
+        },
+      ],
+      // 第二组：危险操作
+      [
+        {
+          key: "clear",
+          icon: <DeleteOutlined />,
+          tooltip: "清空画布",
+          onClick: handleClearAll,
+          danger: true,
+        },
+      ],
     ],
-    // 第二组：危险操作
-    [
-      { 
-        key: "clear", 
-        icon: <DeleteOutlined />, 
-        tooltip: "清空画布", 
-        onClick: handleClearAll, 
-        danger: true,
-      },
-    ],
-  ], [editor]);
+    [editor],
+  );
 
   /**
    * 处理按钮点击
@@ -150,12 +157,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     <div className={styles.toolbarLeft}>
       {/* 模式切换按钮（带弹窗） */}
       <div ref={modeButtonRef} className={styles.modeButtonWrapper}>
-          <button
-            className={`${styles.toolBtn} ${styles.active}`}
-            onClick={() => setShowModePopup(!showModePopup)}
-          >
-            {getCurrentModeIcon()}
-          </button>
+        <button
+          className={`${styles.toolBtn} ${styles.active}`}
+          onClick={() => setShowModePopup(!showModePopup)}
+        >
+          {getCurrentModeIcon()}
+        </button>
         {showModePopup && (
           <div className={styles.modePopup}>
             {modeOptions.map((option) => (
