@@ -1,4 +1,4 @@
 export { MarkerPlugin } from "./MarkerPlugin";
-export { MarkerRenderer } from "./render/MarkerRenderer";
+export { MarkerRenderer } from "./MarkerRenderer";
 export * from "./types";
-export type { MarkerPluginOptions, MarkerType, RegionStyle } from "./types";
+export type { MarkerPluginOptions } from "./types";

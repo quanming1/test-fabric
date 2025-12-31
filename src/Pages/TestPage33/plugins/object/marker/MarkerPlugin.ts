@@ -1,23 +1,12 @@
 import { Point, util, type FabricObject } from "fabric";
 import { BasePlugin } from "../../base/Plugin";
-import { MarkerRenderer } from "./render/MarkerRenderer";
-import type { MarkerData, MarkerStyle, MarkerPluginOptions, RegionStyle } from "./types";
+import { MarkerRenderer } from "./MarkerRenderer";
+import type { MarkerData, MarkerStyle, MarkerPluginOptions } from "./types";
 import { genId, Category, type MarkPoint } from "../../../core";
 import { EditorMode } from "../../mode/ModePlugin";
 
 /** 默认可标记的分类 */
 const DEFAULT_MARKABLE_CATEGORIES: Category[] = [Category.DrawRect, Category.Image];
-/** 默认拖拽阈值（像素） */
-const DEFAULT_DRAG_THRESHOLD = 5;
-
-/** 拖拽状态 */
-interface DragState {
-    target: FabricObject;
-    targetId: string;
-    startScenePt: { x: number; y: number };
-    startLocalPt: { x: number; y: number };
-    isDragging: boolean;
-}
 
 /**
  * 标记点插件（Canvas 渲染版本）
@@ -30,22 +19,18 @@ export class MarkerPlugin extends BasePlugin {
     private renderer!: MarkerRenderer;
     private options: MarkerPluginOptions;
     private markableCategories: Category[];
-    private dragThreshold: number;
-    private dragState: DragState | null = null;
 
     constructor(options?: MarkerPluginOptions) {
         super();
         this.options = options ?? {};
         this.markableCategories = options?.markableCategories ?? DEFAULT_MARKABLE_CATEGORIES;
-        this.dragThreshold = options?.dragThreshold ?? DEFAULT_DRAG_THRESHOLD;
     }
 
     protected onInstall(): void {
         this.renderer = new MarkerRenderer(
             this.canvas,
             this.editor.metadata,
-            this.options.style,
-            this.options.regionStyle
+            this.options.style
         );
         this.bindEvents();
     }
@@ -62,8 +47,6 @@ export class MarkerPlugin extends BasePlugin {
 
     private bindEvents(): void {
         this.canvas.on("mouse:down", this.onMouseDown);
-        this.canvas.on("mouse:move", this.onMouseMove);
-        this.canvas.on("mouse:up", this.onMouseUp);
         this.canvas.on("object:moving", this.syncMarkers);
         this.canvas.on("object:scaling", this.syncMarkers);
         this.canvas.on("object:rotating", this.syncMarkers);
@@ -126,77 +109,10 @@ export class MarkerPlugin extends BasePlugin {
         if (!targetId) return;
 
         const scenePt = this.canvas.getScenePoint(e as any);
-
-        // 计算局部坐标
-        const inv = util.invertTransform(target.calcTransformMatrix());
-        const localPt = new Point(scenePt.x, scenePt.y).transform(inv);
-
-        // 记录拖拽起始状态
-        this.dragState = {
-            target,
-            targetId,
-            startScenePt: { x: scenePt.x, y: scenePt.y },
-            startLocalPt: { x: localPt.x, y: localPt.y },
-            isDragging: false,
-        };
+        this.addMarker(target, targetId, scenePt);
 
         e.preventDefault();
         e.stopPropagation();
-    };
-
-    private onMouseMove = (opt: any): void => {
-        if (!this.dragState) return;
-
-        const e = opt.e as MouseEvent;
-        const scenePt = this.canvas.getScenePoint(e as any);
-
-        // 计算移动距离
-        const dx = scenePt.x - this.dragState.startScenePt.x;
-        const dy = scenePt.y - this.dragState.startScenePt.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance >= this.dragThreshold) {
-            this.dragState.isDragging = true;
-
-            // 计算当前局部坐标
-            const inv = util.invertTransform(this.dragState.target.calcTransformMatrix());
-            const currentLocalPt = new Point(scenePt.x, scenePt.y).transform(inv);
-
-            // 更新预览矩形
-            this.renderer.updatePreview(
-                this.dragState.target,
-                this.dragState.startLocalPt,
-                { x: currentLocalPt.x, y: currentLocalPt.y }
-            );
-        }
-    };
-
-    private onMouseUp = (opt: any): void => {
-        if (!this.dragState) return;
-
-        const e = opt.e as MouseEvent;
-        const scenePt = this.canvas.getScenePoint(e as any);
-
-        if (this.dragState.isDragging) {
-            // 拖拽结束，创建区域标记
-            const inv = util.invertTransform(this.dragState.target.calcTransformMatrix());
-            const endLocalPt = new Point(scenePt.x, scenePt.y).transform(inv);
-
-            this.addRegion(
-                this.dragState.target,
-                this.dragState.targetId,
-                this.dragState.startLocalPt,
-                { x: endLocalPt.x, y: endLocalPt.y }
-            );
-
-            // 清除预览
-            this.renderer.clearPreview();
-        } else {
-            // 点击，创建标记点
-            this.addMarker(this.dragState.target, this.dragState.targetId, scenePt);
-        }
-
-        this.dragState = null;
     };
 
     /**
@@ -220,7 +136,6 @@ export class MarkerPlugin extends BasePlugin {
         const marker: MarkerData = {
             id: genId("pt"),
             targetId,
-            type: "point",
             nx,
             ny,
         };
@@ -230,50 +145,6 @@ export class MarkerPlugin extends BasePlugin {
         this.syncMarkers();
 
         return { id: marker.id, rectId: targetId, nx, ny };
-    }
-
-    /**
-     * 添加区域标记
-     */
-    addRegion(
-        target: FabricObject,
-        targetId: string,
-        startLocalPt: { x: number; y: number },
-        endLocalPt: { x: number; y: number }
-    ): MarkerData | null {
-        const w = target.width ?? 0;
-        const h = target.height ?? 0;
-        if (!w || !h) return null;
-
-        // 计算归一化坐标（确保左上角为起点）
-        const x1 = (startLocalPt.x + w / 2) / w;
-        const y1 = (startLocalPt.y + h / 2) / h;
-        const x2 = (endLocalPt.x + w / 2) / w;
-        const y2 = (endLocalPt.y + h / 2) / h;
-
-        const nx = Math.min(x1, x2);
-        const ny = Math.min(y1, y2);
-        const nw = Math.abs(x2 - x1);
-        const nh = Math.abs(y2 - y1);
-
-        // 忽略太小的区域
-        if (nw < 0.01 || nh < 0.01) return null;
-
-        const marker: MarkerData = {
-            id: genId("rg"),
-            targetId,
-            type: "region",
-            nx,
-            ny,
-            nw,
-            nh,
-        };
-
-        this.markers.push(marker);
-        this.emitChange();
-        this.syncMarkers();
-
-        return marker;
     }
 
     private syncMarkers = (): void => {
@@ -313,16 +184,8 @@ export class MarkerPlugin extends BasePlugin {
         this.syncMarkers();
     }
 
-    setRegionStyle(style: Partial<RegionStyle>): void {
-        this.renderer.setRegionStyle(style);
-        this.renderer.clear();
-        this.syncMarkers();
-    }
-
     protected onDestroy(): void {
         this.canvas.off("mouse:down", this.onMouseDown);
-        this.canvas.off("mouse:move", this.onMouseMove);
-        this.canvas.off("mouse:up", this.onMouseUp);
         this.canvas.off("object:moving", this.syncMarkers);
         this.canvas.off("object:scaling", this.syncMarkers);
         this.canvas.off("object:rotating", this.syncMarkers);
@@ -332,6 +195,5 @@ export class MarkerPlugin extends BasePlugin {
         this.eventBus.off("layer:change", this.bringMarkersToFront);
         this.eventBus.off("mode:change", this.onModeChange);
         this.renderer.clear();
-        this.dragState = null;
     }
 }
