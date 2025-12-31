@@ -16,11 +16,31 @@ export interface WatchCallbackParams {
 export type WatchCallback = (params: WatchCallbackParams) => void;
 
 /** watch 配置 */
+export interface WatchConfig {
+    /** 要监听的输入码 */
+    codes: InputCode | InputCode[];
+    /** 匹配模式，默认 'all' */
+    mode?: MatchMode;
+    /** 是否响应长按重复事件，默认 false */
+    repeat?: boolean;
+}
+
 interface WatchEntry {
     codes: InputCode[];
     mode: MatchMode;
+    repeat: boolean;
     callback: WatchCallback;
 }
+
+/** HotkeyManager 配置 */
+export interface HotkeyManagerConfig {
+    /** 是否在捕获阶段监听事件，默认 false（冒泡阶段） */
+    capture?: boolean;
+}
+
+const defaultConfig: Required<HotkeyManagerConfig> = {
+    capture: true,
+};
 
 /**
  * 热键状态管理器
@@ -31,26 +51,33 @@ export class HotkeyManager {
     private pressedButtons = new Set<MouseButton>();
     private watchers: WatchEntry[] = [];
     private _destroyed = false;
+    private config: Required<HotkeyManagerConfig>;
 
-    constructor(private target: HTMLElement | Window = window) {
+    constructor(
+        private target: HTMLElement | Window = window,
+        config: HotkeyManagerConfig = {}
+    ) {
+        this.config = { ...defaultConfig, ...config };
         this.bindEvents();
     }
 
     private bindEvents(): void {
         const t = this.target;
-        t.addEventListener("keydown", this.onKeyDown);
-        t.addEventListener("keyup", this.onKeyUp);
-        t.addEventListener("mousedown", this.onMouseDown);
-        t.addEventListener("mouseup", this.onMouseUp);
+        const capture = this.config.capture;
+        t.addEventListener("keydown", this.onKeyDown, capture);
+        t.addEventListener("keyup", this.onKeyUp, capture);
+        t.addEventListener("mousedown", this.onMouseDown, capture);
+        t.addEventListener("mouseup", this.onMouseUp, capture);
         window.addEventListener("blur", this.onBlur);
     }
 
     private unbindEvents(): void {
         const t = this.target;
-        t.removeEventListener("keydown", this.onKeyDown);
-        t.removeEventListener("keyup", this.onKeyUp);
-        t.removeEventListener("mousedown", this.onMouseDown);
-        t.removeEventListener("mouseup", this.onMouseUp);
+        const capture = this.config.capture;
+        t.removeEventListener("keydown", this.onKeyDown, capture);
+        t.removeEventListener("keyup", this.onKeyUp, capture);
+        t.removeEventListener("mousedown", this.onMouseDown, capture);
+        t.removeEventListener("mouseup", this.onMouseUp, capture);
         window.removeEventListener("blur", this.onBlur);
     }
 
@@ -84,7 +111,10 @@ export class HotkeyManager {
     };
 
     private notifyWatchers(event: KeyboardEvent | MouseEvent): void {
+        const isRepeat = event instanceof KeyboardEvent && event.repeat;
         for (const w of this.watchers) {
+            // 如果是重复事件且 watcher 不响应重复，跳过
+            if (isRepeat && !w.repeat) continue;
             const matched = this.isPressed(w.codes, w.mode);
             w.callback({ event, matched });
         }
@@ -132,12 +162,16 @@ export class HotkeyManager {
 
     /**
      * 监听指定输入码，每次按键/鼠标事件都会触发回调
+     * @param callback 回调函数
+     * @param config 配置项：codes, mode, repeat
      * @returns 取消监听的函数
      */
-    watch(codes: InputCode | InputCode[], mode: MatchMode, callback: WatchCallback): () => void {
+    watch(callback: WatchCallback, config: WatchConfig): () => void {
+        const { codes, mode = "all", repeat = false } = config;
         const entry: WatchEntry = {
             codes: Array.isArray(codes) ? codes : [codes],
             mode,
+            repeat,
             callback,
         };
         this.watchers.push(entry);
@@ -145,40 +179,6 @@ export class HotkeyManager {
             const idx = this.watchers.indexOf(entry);
             if (idx !== -1) this.watchers.splice(idx, 1);
         };
-    }
-
-    // ========== 常用修饰键快捷属性 ==========
-
-    get ctrl(): boolean {
-        return this.pressedKeys.has("ControlLeft") || this.pressedKeys.has("ControlRight");
-    }
-
-    get shift(): boolean {
-        return this.pressedKeys.has("ShiftLeft") || this.pressedKeys.has("ShiftRight");
-    }
-
-    get alt(): boolean {
-        return this.pressedKeys.has("AltLeft") || this.pressedKeys.has("AltRight");
-    }
-
-    get meta(): boolean {
-        return this.pressedKeys.has("MetaLeft") || this.pressedKeys.has("MetaRight");
-    }
-
-    get space(): boolean {
-        return this.pressedKeys.has("Space");
-    }
-
-    get leftMouse(): boolean {
-        return this.pressedButtons.has(0);
-    }
-
-    get middleMouse(): boolean {
-        return this.pressedButtons.has(1);
-    }
-
-    get rightMouse(): boolean {
-        return this.pressedButtons.has(2);
     }
 
     // ========== 生命周期 ==========

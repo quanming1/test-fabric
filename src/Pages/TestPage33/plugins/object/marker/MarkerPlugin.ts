@@ -4,6 +4,7 @@ import { MarkerRenderer } from "./MarkerRenderer";
 import type { MarkerData, MarkerStyle, MarkerPluginOptions } from "./types";
 import { genId, Category, type MarkPoint } from "../../../core";
 import { EditorMode } from "../../mode/ModePlugin";
+import { MarkerPluginState } from "./helper/MarkerPluginState";
 
 /** 默认可标记的分类 */
 const DEFAULT_MARKABLE_CATEGORIES: Category[] = [Category.DrawRect, Category.Image];
@@ -19,6 +20,7 @@ export class MarkerPlugin extends BasePlugin {
     private renderer!: MarkerRenderer;
     private options: MarkerPluginOptions;
     private markableCategories: Category[];
+    private state: MarkerPluginState = null
 
     constructor(options?: MarkerPluginOptions) {
         super();
@@ -33,6 +35,8 @@ export class MarkerPlugin extends BasePlugin {
             this.options.style
         );
         this.bindEvents();
+
+        this.state = new MarkerPluginState(this.markableCategories, this.editor)
     }
 
     /** 获取标记点数据 */
