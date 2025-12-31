@@ -3,7 +3,7 @@ import {
     EventBus,
     type CanvasEditor,
 } from "src/Pages/TestPage33/core";
-import { type FabricObject } from "fabric";
+import { type FabricObject, type TPointerEventInfo, type TPointerEvent } from "fabric";
 
 /** MarkerPluginState 事件类型定义 */
 export type MarkerPluginStateEvents = {
@@ -39,7 +39,7 @@ export class MarkerPluginState extends EventBus<MarkerPluginStateEvents> {
     }
 
     private bindEvents(): void {
-        this.canvas.on("mouse:over", this.handleMouseOver);
+        this.canvas.on("mouse:move", this.handleMouseMove);
         this.canvas.on("mouse:out", this.handleMouseOut);
         // 使用 HotkeyManager 的 watch API 监听 Ctrl/Meta 键
         this.unwatchHotkey = this.hotkey.watch(
@@ -61,10 +61,6 @@ export class MarkerPluginState extends EventBus<MarkerPluginStateEvents> {
         );
     }
 
-    private getTargetId(target: FabricObject): string | null {
-        return this.metadata.get(target)?.id ?? null;
-    }
-
     private updateCanMark(): void {
         const isCtrlOrMeta = this.hotkey.isPressed(
             ["ControlLeft", "ControlRight", "MetaLeft", "MetaRight"],
@@ -78,28 +74,21 @@ export class MarkerPluginState extends EventBus<MarkerPluginStateEvents> {
         }
     }
 
-    private handleMouseOver = (opt: { target?: FabricObject }): void => {
+    private handleMouseMove = (opt: TPointerEventInfo<TPointerEvent>): void => {
         const target = opt.target;
-        if (target && this.isMarkable(target)) {
-            const oldId = this.hoveredTargetId;
-            this.hoveredTargetId = this.getTargetId(target);
-            if (oldId !== this.hoveredTargetId) {
-                this.emit("hoveredTargetId:change", this.hoveredTargetId);
-            }
+        const newId = target && this.isMarkable(target) ? this.metadata.getField(target, "id") : null;
+
+        if (newId !== this.hoveredTargetId) {
+            this.hoveredTargetId = newId;
+            this.emit("hoveredTargetId:change", this.hoveredTargetId);
         }
         this.updateCanMark();
     };
 
-    private handleMouseOut = (opt: { target?: FabricObject }): void => {
-        const target = opt.target;
-        const targetId = target ? this.getTargetId(target) : null;
-
-        if (targetId && targetId === this.hoveredTargetId) {
-            const oldId = this.hoveredTargetId;
+    private handleMouseOut = (): void => {
+        if (this.hoveredTargetId !== null) {
             this.hoveredTargetId = null;
-            if (oldId !== null) {
-                this.emit("hoveredTargetId:change", this.hoveredTargetId);
-            }
+            this.emit("hoveredTargetId:change", this.hoveredTargetId);
         }
         this.updateCanMark();
     };
@@ -110,7 +99,7 @@ export class MarkerPluginState extends EventBus<MarkerPluginStateEvents> {
     }
 
     destroy(): void {
-        this.canvas.off("mouse:over", this.handleMouseOver);
+        this.canvas.off("mouse:move", this.handleMouseMove);
         this.canvas.off("mouse:out", this.handleMouseOut);
         this.unwatchHotkey?.();
         this.unwatchHotkey = null;
