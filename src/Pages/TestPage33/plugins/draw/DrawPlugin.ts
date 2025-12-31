@@ -34,12 +34,28 @@ export class DrawPlugin extends BasePlugin {
         // 监听模式变化，更新 DrawRect 对象的可选状态
         this.eventBus.on("mode:change", this.onModeChange);
     }
+
     /**
      * 模式变化时更新 DrawRect 对象的可选状态
      */
     private onModeChange = ({ mode }: { mode: EditorMode }): void => {
-        const selectable = mode === EditorMode.Select;
-        this.setDrawRectsSelectable(selectable);
+        const modeConfig: Record<EditorMode, { selectable: boolean; evented: boolean }> = {
+            [EditorMode.Select]: { selectable: true, evented: true },
+            [EditorMode.Pan]: { selectable: false, evented: false },
+            [EditorMode.DrawRect]: { selectable: false, evented: false },
+            [EditorMode.RangeSelect]: { selectable: false, evented: true },
+        };
+
+        const config = modeConfig[mode];
+        if (!config) {
+            throw new Error("[onModeChange] 未知的mode")
+        }
+
+        this.drawRectList.forEach((obj) => {
+            obj.selectable = config.selectable;
+            obj.evented = config.evented;
+            obj.setCoords();
+        });
     };
 
     /**
@@ -58,16 +74,6 @@ export class DrawPlugin extends BasePlugin {
         obj.evented = isSelectMode;
     };
 
-    /**
-     * 设置所有 DrawRect 对象的可选状态
-     */
-    private setDrawRectsSelectable(selectable: boolean): void {
-        this.drawRectList.forEach((obj) => {
-            obj.selectable = selectable;
-            obj.evented = selectable;
-            obj.setCoords();
-        });
-    }
     /**
      * 获取当前模式
      */

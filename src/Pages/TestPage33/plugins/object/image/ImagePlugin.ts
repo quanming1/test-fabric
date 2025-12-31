@@ -16,12 +16,28 @@ export class ImagePlugin extends BasePlugin {
         this.eventBus.on("mode:change", this.onModeChange);
     }
 
+    /** 各模式下图片的交互配置 */
+    private static readonly MODE_CONFIG: Record<EditorMode, { selectable: boolean; evented: boolean }> = {
+        [EditorMode.Select]: { selectable: true, evented: true },
+        [EditorMode.Pan]: { selectable: false, evented: false },
+        [EditorMode.DrawRect]: { selectable: false, evented: false },
+        [EditorMode.RangeSelect]: { selectable: false, evented: true },
+    };
+
     /**
      * 模式变化时更新图片的可选状态
      */
     private onModeChange = ({ mode }: { mode: EditorMode }): void => {
-        const selectable = mode === EditorMode.Select;
-        this.setImagesSelectable(selectable);
+        const config = ImagePlugin.MODE_CONFIG[mode];
+        if (!config) {
+            throw new Error("[onModeChange] 未知的mode");
+        }
+
+        this.editor.metadata.filter("category", Category.Image).forEach((obj) => {
+            obj.selectable = config.selectable;
+            obj.evented = config.evented;
+            obj.setCoords();
+        });
     };
 
     /**
@@ -35,23 +51,11 @@ export class ImagePlugin extends BasePlugin {
         if (!isImage) return;
 
         const modePlugin = this.editor.getPlugin<any>("mode");
-        const isSelectMode = modePlugin?.mode === EditorMode.Select;
-        obj.selectable = isSelectMode;
-        obj.evented = isSelectMode;
+        const mode = modePlugin?.mode as EditorMode;
+        const config = ImagePlugin.MODE_CONFIG[mode] ?? { selectable: false, evented: false };
+        obj.selectable = config.selectable;
+        obj.evented = config.evented;
     };
-
-    /**
-     * 设置所有图片的可选状态
-     */
-    private setImagesSelectable(selectable: boolean): void {
-        this.editor.metadata.filter("category", Category.Image).forEach((obj) => {
-            console.log(obj);
-
-            obj.selectable = selectable;
-            obj.evented = selectable;
-            obj.setCoords();
-        });
-    }
 
     /**
      * 通过文件上传图片

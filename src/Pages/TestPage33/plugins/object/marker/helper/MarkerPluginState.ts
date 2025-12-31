@@ -1,7 +1,17 @@
-import { Category, type CanvasEditor } from "src/Pages/TestPage33/core";
+import {
+    Category,
+    EventBus,
+    type CanvasEditor,
+} from "src/Pages/TestPage33/core";
 import { type FabricObject } from "fabric";
 
-export class MarkerPluginState {
+/** MarkerPluginState 事件类型定义 */
+export type MarkerPluginStateEvents = {
+    "rangeAble:change": [rangeAble: boolean];
+    "hoveredTargetId:change": [targetId: string | null];
+};
+
+export class MarkerPluginState extends EventBus<MarkerPluginStateEvents> {
     // 当前悬浮的可标记对象 ID
     public hoveredTargetId: string | null = null;
     // 是否可以进行标记（鼠标在可标记区域 + 按下 Ctrl）
@@ -12,6 +22,7 @@ export class MarkerPluginState {
         private markableCategories: Category[],
         private editor: CanvasEditor
     ) {
+        super();
         this.bindEvents();
     }
 
@@ -55,18 +66,26 @@ export class MarkerPluginState {
     }
 
     private updateCanMark(): void {
-        // 使用 isPressed 判断 Ctrl/Meta
         const isCtrlOrMeta = this.hotkey.isPressed(
             ["ControlLeft", "ControlRight", "MetaLeft", "MetaRight"],
             "any"
         );
+        const oldRangeAble = this.rangeAble;
         this.rangeAble = isCtrlOrMeta && this.hoveredTargetId !== null;
+
+        if (oldRangeAble !== this.rangeAble) {
+            this.emit("rangeAble:change", this.rangeAble);
+        }
     }
 
     private handleMouseOver = (opt: { target?: FabricObject }): void => {
         const target = opt.target;
         if (target && this.isMarkable(target)) {
+            const oldId = this.hoveredTargetId;
             this.hoveredTargetId = this.getTargetId(target);
+            if (oldId !== this.hoveredTargetId) {
+                this.emit("hoveredTargetId:change", this.hoveredTargetId);
+            }
         }
         this.updateCanMark();
     };
@@ -76,7 +95,11 @@ export class MarkerPluginState {
         const targetId = target ? this.getTargetId(target) : null;
 
         if (targetId && targetId === this.hoveredTargetId) {
+            const oldId = this.hoveredTargetId;
             this.hoveredTargetId = null;
+            if (oldId !== null) {
+                this.emit("hoveredTargetId:change", this.hoveredTargetId);
+            }
         }
         this.updateCanMark();
     };
@@ -89,10 +112,10 @@ export class MarkerPluginState {
     destroy(): void {
         this.canvas.off("mouse:over", this.handleMouseOver);
         this.canvas.off("mouse:out", this.handleMouseOut);
-        // 取消 hotkey 监听
         this.unwatchHotkey?.();
         this.unwatchHotkey = null;
         this.hoveredTargetId = null;
         this.rangeAble = false;
+        this.clear(); // 清空所有事件订阅
     }
 }

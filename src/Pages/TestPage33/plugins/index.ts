@@ -14,6 +14,8 @@ export { ModePlugin, EditorMode } from "./mode/ModePlugin";
 export { DrawPlugin } from "./draw/DrawPlugin";
 
 // Object
-export { MarkerPlugin, MarkerRenderer } from "./object/marker";
-export type { MarkerStyle, MarkerData } from "./object/marker";
+export { MarkerPlugin, PointRenderer, RegionRenderer } from "./object/marker";
+export type { PointStyle, PointData, RegionStyle, RegionData } from "./object/marker";
+// 兼容旧类型名
+export type { PointStyle as MarkerStyle, PointData as MarkerData } from "./object/marker";
 export { ImagePlugin } from "./object/image";

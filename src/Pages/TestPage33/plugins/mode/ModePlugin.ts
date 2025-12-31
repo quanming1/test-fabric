@@ -10,6 +10,8 @@ export enum EditorMode {
     Pan = "pan",
     /** 绘制矩形模式 */
     DrawRect = "draw-rect",
+    // 区域框选
+    RangeSelect = 'range-select'
 }
 
 /**
@@ -55,9 +57,6 @@ export class ModePlugin extends BasePlugin {
         this.eventBus.emit("mode:change", { mode, prevMode });
     }
 
-    /**
-     * 通用画布设置（光标、框选、取消选择等）
-     */
     private applyModeSettingsIntoCanvas(mode: EditorMode): void {
         switch (mode) {
             case EditorMode.Select:
@@ -79,6 +78,13 @@ export class ModePlugin extends BasePlugin {
                 this.canvas.hoverCursor = "crosshair";
                 this.canvas.discardActiveObject();
                 break;
+
+            case EditorMode.RangeSelect:
+                this.canvas.selection = false;
+                this.canvas.defaultCursor = "crosshair";
+                this.canvas.hoverCursor = "crosshair";
+                this.canvas.discardActiveObject();
+                break
         }
 
         this.canvas.requestRenderAll();

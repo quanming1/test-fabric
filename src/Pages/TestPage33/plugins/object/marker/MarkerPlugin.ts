@@ -1,26 +1,31 @@
-import { Point, util, type FabricObject } from "fabric";
+import type { FabricObject } from "fabric";
 import { BasePlugin } from "../../base/Plugin";
-import { MarkerRenderer } from "./MarkerRenderer";
-import type { MarkerData, MarkerStyle, MarkerPluginOptions } from "./types";
-import { genId, Category, type MarkPoint } from "../../../core";
-import { EditorMode } from "../../mode/ModePlugin";
+import { PointManager } from "./data/PointManager";
+import { RegionManager } from "./data/RegionManager";
+import type { MarkerPluginOptions, PointStyle, RegionStyle, RegionData } from "./types";
+import { Category, type MarkPoint } from "../../../core";
+import { EditorMode, ModePlugin } from "../../mode/ModePlugin";
 import { MarkerPluginState } from "./helper/MarkerPluginState";
 
 /** 默认可标记的分类 */
 const DEFAULT_MARKABLE_CATEGORIES: Category[] = [Category.DrawRect, Category.Image];
 
 /**
- * 标记点插件（Canvas 渲染版本）
- * 功能：Ctrl+点击在任意可标记对象上创建标记点，标记点跟随对象变换
+ * 标记插件
+ * 功能：
+ * - Ctrl+点击在任意可标记对象上创建标记点
+ * - RangeSelect 模式下拖动绘制区域，点击添加标记点
+ * - 标记点和区域跟随目标对象变换
  */
 export class MarkerPlugin extends BasePlugin {
     readonly name = "marker";
 
-    private markers: MarkerData[] = [];
-    private renderer!: MarkerRenderer;
+    private pointManager!: PointManager;
+    private regionManager!: RegionManager;
     private options: MarkerPluginOptions;
     private markableCategories: Category[];
-    private state: MarkerPluginState = null
+    private state: MarkerPluginState = null!;
+    private lastMode: EditorMode | null = null;
 
     constructor(options?: MarkerPluginOptions) {
         super();
@@ -29,66 +34,117 @@ export class MarkerPlugin extends BasePlugin {
     }
 
     protected onInstall(): void {
-        this.renderer = new MarkerRenderer(
-            this.canvas,
-            this.editor.metadata,
-            this.options.style
-        );
+        this.pointManager = new PointManager({
+            canvas: this.canvas,
+            metadata: this.editor.metadata,
+            eventBus: this.eventBus,
+            style: this.options.style,
+        });
+
+        this.regionManager = new RegionManager({
+            canvas: this.canvas,
+            metadata: this.editor.metadata,
+            eventBus: this.eventBus,
+            style: this.options.regionStyle,
+        });
+
+        this.state = new MarkerPluginState(this.markableCategories, this.editor);
         this.bindEvents();
-
-        this.state = new MarkerPluginState(this.markableCategories, this.editor)
     }
 
-    /** 获取标记点数据 */
+    // ─── 公开 API ─────────────────────────────────────────
+
     get points(): MarkPoint[] {
-        return this.markers.map(({ id, targetId, nx, ny }) => ({
-            id,
-            rectId: targetId, // 保持向后兼容
-            nx,
-            ny,
-        }));
+        return this.pointManager.data;
     }
+
+    get regionList(): RegionData[] {
+        return this.regionManager.data;
+    }
+
+    addMarker(target: FabricObject, targetId: string, scenePt: { x: number; y: number }): MarkPoint | null {
+        return this.pointManager.add(target, targetId, scenePt);
+    }
+
+    addRegion(
+        target: FabricObject,
+        targetId: string,
+        startPt: { x: number; y: number },
+        endPt: { x: number; y: number }
+    ): RegionData | null {
+        return this.regionManager.add(target, targetId, startPt, endPt);
+    }
+
+    removeMarker = (id: string): void => this.pointManager.remove(id);
+    removeMarkersByTarget = (targetId: string): void => this.pointManager.removeByTarget(targetId);
+    removeRegion = (id: string): void => this.regionManager.remove(id);
+    removeRegionsByTarget = (targetId: string): void => this.regionManager.removeByTarget(targetId);
+    clearMarkers = (): void => this.pointManager.clear();
+    clearRegions = (): void => this.regionManager.clear();
+    clearAll = (): void => { this.clearMarkers(); this.clearRegions(); };
+
+    setStyle(style: Partial<PointStyle>): void {
+        this.pointManager.setStyle(style);
+    }
+
+    setRegionStyle(style: Partial<RegionStyle>): void {
+        this.regionManager.setStyle(style);
+    }
+
+    // ─── 私有方法 ─────────────────────────────────────────
 
     private bindEvents(): void {
         this.canvas.on("mouse:down", this.onMouseDown);
-        this.canvas.on("object:moving", this.syncMarkers);
-        this.canvas.on("object:scaling", this.syncMarkers);
-        this.canvas.on("object:rotating", this.syncMarkers);
-        this.canvas.on("object:modified", this.syncMarkers);
+        this.canvas.on("mouse:move", this.onMouseMove);
+        this.canvas.on("mouse:up", this.onMouseUp);
+        this.canvas.on("object:moving", this.syncAll);
+        this.canvas.on("object:scaling", this.syncAll);
+        this.canvas.on("object:rotating", this.syncAll);
+        this.canvas.on("object:modified", this.syncAll);
         this.canvas.on("object:removed", this.onObjectRemoved);
 
-        this.eventBus.on("zoom:change", this.syncMarkers);
-        this.eventBus.on("layer:change", this.bringMarkersToFront);
+        this.eventBus.on("zoom:change", this.syncAll);
+        this.eventBus.on("layer:change", this.bringAllToFront);
         this.eventBus.on("mode:change", this.onModeChange);
+
+        this.state.on("rangeAble:change", (rangeAble) => {
+            console.log("[rangeAble:change] " + rangeAble);
+            if (rangeAble) {
+                this.lastMode = this.editor.getPlugin<ModePlugin>("mode").mode;
+                this.editor.getPlugin<ModePlugin>("mode").setMode(EditorMode.RangeSelect);
+            } else {
+                this.editor.getPlugin<ModePlugin>("mode").setMode(this.lastMode ?? EditorMode.Select);
+            }
+        });
     }
 
-    /**
-     * 判断对象是否可被标记
-     */
     private canMark(target: FabricObject): boolean {
-        return this.markableCategories.some((cat) =>
-            this.editor.metadata.is(target, "category", cat)
-        );
+        return this.markableCategories.some((cat) => this.editor.metadata.is(target, "category", cat));
     }
 
-    /**
-     * 获取目标对象的 ID
-     */
     private getTargetId(target: FabricObject): string | null {
         return this.editor.metadata.get(target)?.id ?? null;
     }
 
-    /**
-     * 模式变化时更新 Marker 的 evented 状态
-     */
+    private getCurrentMode(): EditorMode | null {
+        return this.editor.getPlugin<ModePlugin>("mode")?.mode ?? null;
+    }
+
     private onModeChange = ({ mode }: { mode: EditorMode }): void => {
-        const evented = mode === EditorMode.Select;
-        this.renderer.setEvented(evented);
+        // 注意：区域框始终不响应事件，让事件穿透到下层目标元素
+        switch (mode) {
+            case EditorMode.Select:
+                this.pointManager.setEvented(true);
+                break;
+            case EditorMode.RangeSelect:
+            case EditorMode.DrawRect:
+            case EditorMode.Pan:
+            default:
+                this.pointManager.setEvented(false);
+                break;
+        }
     };
 
-    /**
-     * 对象被删除时，移除其上的所有标记点
-     */
     private onObjectRemoved = (opt: { target: FabricObject }): void => {
         const target = opt.target;
         if (!target || !this.canMark(target)) return;
@@ -96,18 +152,33 @@ export class MarkerPlugin extends BasePlugin {
         const targetId = this.getTargetId(target);
         if (targetId) {
             this.removeMarkersByTarget(targetId);
+            this.removeRegionsByTarget(targetId);
         }
     };
 
     private onMouseDown = (opt: any): void => {
         const e = opt.e as MouseEvent;
+        const mode = this.getCurrentMode();
+
+        if (mode === EditorMode.RangeSelect) {
+            const target = opt.target;
+            if (!target || !this.canMark(target)) return;
+
+            const targetId = this.getTargetId(target);
+            if (!targetId) return;
+
+            const scenePt = this.canvas.getScenePoint(e as any);
+            this.regionManager.startDraw(target, targetId, scenePt);
+
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
         if (!(e.ctrlKey || e.metaKey)) return;
 
         const target = opt.target;
-        if (!target) return;
-
-        // 检查是否可标记
-        if (!this.canMark(target)) return;
+        if (!target || !this.canMark(target)) return;
 
         const targetId = this.getTargetId(target);
         if (!targetId) return;
@@ -119,85 +190,48 @@ export class MarkerPlugin extends BasePlugin {
         e.stopPropagation();
     };
 
-    /**
-     * 添加标记点
-     */
-    addMarker(
-        target: FabricObject,
-        targetId: string,
-        scenePt: { x: number; y: number }
-    ): MarkPoint | null {
-        const w = target.width ?? 0;
-        const h = target.height ?? 0;
-        if (!w || !h) return null;
-
-        const inv = util.invertTransform(target.calcTransformMatrix());
-        const localPt = new Point(scenePt.x, scenePt.y).transform(inv);
-
-        const nx = (localPt.x + w / 2) / w;
-        const ny = (localPt.y + h / 2) / h;
-
-        const marker: MarkerData = {
-            id: genId("pt"),
-            targetId,
-            nx,
-            ny,
-        };
-
-        this.markers.push(marker);
-        this.emitChange();
-        this.syncMarkers();
-
-        return { id: marker.id, rectId: targetId, nx, ny };
-    }
-
-    private syncMarkers = (): void => {
-        this.renderer.sync(this.markers);
+    private onMouseMove = (opt: any): void => {
+        if (!this.regionManager.drawing) return;
+        const scenePt = this.canvas.getScenePoint(opt.e as any);
+        this.regionManager.updateDraw(scenePt);
     };
 
-    private bringMarkersToFront = (): void => {
-        this.renderer.bringToFront();
+    private onMouseUp = (opt: any): void => {
+        if (!this.regionManager.drawing) return;
+
+        const scenePt = this.canvas.getScenePoint(opt.e as any);
+        const drawInfo = this.regionManager.getDrawTarget();
+        const isDrag = this.regionManager.endDraw(scenePt);
+
+        if (!isDrag && drawInfo) {
+            this.addMarker(drawInfo.target, drawInfo.targetId, scenePt);
+        }
     };
 
-    private emitChange(): void {
-        this.eventBus.emit("markers:change", this.points);
-    }
+    private syncAll = (): void => {
+        this.pointManager.sync();
+        this.regionManager.sync();
+    };
 
-    removeMarker(id: string): void {
-        this.markers = this.markers.filter((m) => m.id !== id);
-        this.emitChange();
-        this.syncMarkers();
-    }
-
-    /** 移除指定目标对象上的所有标记点 */
-    removeMarkersByTarget(targetId: string): void {
-        this.markers = this.markers.filter((m) => m.targetId !== targetId);
-        this.emitChange();
-        this.syncMarkers();
-    }
-
-    clearMarkers(): void {
-        this.markers = [];
-        this.renderer.clear();
-        this.emitChange();
-    }
-
-    setStyle(style: Partial<MarkerStyle>): void {
-        this.renderer.setStyle(style);
-        this.renderer.clear();
-        this.syncMarkers();
-    }
+    private bringAllToFront = (): void => {
+        this.regionManager.bringToFront();
+        this.pointManager.bringToFront();
+    };
 
     protected onDestroy(): void {
         this.canvas.off("mouse:down", this.onMouseDown);
-        this.canvas.off("object:moving", this.syncMarkers);
-        this.canvas.off("object:scaling", this.syncMarkers);
-        this.canvas.off("object:rotating", this.syncMarkers);
-        this.canvas.off("object:modified", this.syncMarkers);
+        this.canvas.off("mouse:move", this.onMouseMove);
+        this.canvas.off("mouse:up", this.onMouseUp);
+        this.canvas.off("object:moving", this.syncAll);
+        this.canvas.off("object:scaling", this.syncAll);
+        this.canvas.off("object:rotating", this.syncAll);
+        this.canvas.off("object:modified", this.syncAll);
         this.canvas.off("object:removed", this.onObjectRemoved);
-        this.eventBus.off("zoom:change", this.syncMarkers);
-        this.eventBus.off("layer:change", this.bringMarkersToFront);
+        this.eventBus.off("zoom:change", this.syncAll);
+        this.eventBus.off("layer:change", this.bringAllToFront);
         this.eventBus.off("mode:change", this.onModeChange);
-        this.renderer.clear();
+
+        this.pointManager.destroy();
+        this.regionManager.destroy();
     }
 }

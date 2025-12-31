@@ -1,32 +1,31 @@
 import { Circle, Text, Group, type Canvas } from "fabric";
-import type { MarkerData, MarkerStyle } from "./types";
-import { DEFAULT_MARKER_STYLE } from "./types";
-import { Category, type ObjectMetadata } from "../../../core";
+import type { PointData, PointStyle } from "../types";
+import { DEFAULT_POINT_STYLE } from "../types";
+import { Category, type ObjectMetadata } from "../../../../core";
 
 /**
- * 标记点渲染器
+ * 点标记渲染器
  * 职责：管理标记点的创建、更新、删除和交互
  */
-export class MarkerRenderer {
+export class PointRenderer {
     private canvas: Canvas;
     private metadata: ObjectMetadata;
-    private style: MarkerStyle;
+    private style: PointStyle;
     private groups = new Map<string, Group>();
 
-    constructor(canvas: Canvas, metadata: ObjectMetadata, style: Partial<MarkerStyle> = {}) {
+    constructor(canvas: Canvas, metadata: ObjectMetadata, style: Partial<PointStyle> = {}) {
         this.canvas = canvas;
         this.metadata = metadata;
-        this.style = { ...DEFAULT_MARKER_STYLE, ...style };
+        this.style = { ...DEFAULT_POINT_STYLE, ...style };
     }
 
-    /** 获取当前缩放比例 */
     private getZoom(): number {
         return this.canvas.getZoom() || 1;
     }
 
     /** 同步标记点状态 */
-    sync(markers: MarkerData[]): void {
-        const activeIds = new Set(markers.map((m) => m.id));
+    sync(points: PointData[]): void {
+        const activeIds = new Set(points.map((p) => p.id));
         const inverseZoom = 1 / this.getZoom();
 
         // 移除失效的
@@ -38,23 +37,17 @@ export class MarkerRenderer {
         }
 
         // 创建或更新
-        markers.forEach((marker, i) => {
-            const pos = this.getPosition(marker);
+        points.forEach((point, i) => {
+            const pos = this.getPosition(point);
             if (!pos) return;
 
-            const group = this.groups.get(marker.id);
+            const group = this.groups.get(point.id);
             if (group) {
-                // 更新位置和缩放
-                group.set({
-                    ...pos,
-                    scaleX: inverseZoom,
-                    scaleY: inverseZoom,
-                });
-                // 更新边界框坐标，否则 hover/click 检测会失效
+                group.set({ ...pos, scaleX: inverseZoom, scaleY: inverseZoom });
                 group.setCoords();
                 this.setLabel(group, i + 1);
             } else {
-                this.createMarker(marker.id, pos, i + 1, inverseZoom);
+                this.createPoint(point.id, pos, i + 1, inverseZoom);
             }
         });
 
@@ -82,7 +75,7 @@ export class MarkerRenderer {
     }
 
     /** 更新样式 */
-    setStyle(style: Partial<MarkerStyle>): void {
+    setStyle(style: Partial<PointStyle>): void {
         this.style = { ...this.style, ...style };
     }
 
@@ -95,42 +88,27 @@ export class MarkerRenderer {
 
     // ─── Private ─────────────────────────────────────────
 
-    private createMarker(id: string, pos: { left: number; top: number }, label: number, scale: number): void {
+    private createPoint(id: string, pos: { left: number; top: number }, label: number, scale: number): void {
         const { radius, fill, stroke, strokeWidth, textColor, fontSize } = this.style;
 
         const circle = new Circle({
-            radius,
-            fill,
-            stroke,
-            strokeWidth,
-            originX: "center",
-            originY: "center",
+            radius, fill, stroke, strokeWidth,
+            originX: "center", originY: "center",
         });
 
         const text = new Text(String(label), {
-            fontSize,
-            fill: textColor,
-            fontWeight: "bold",
-            fontFamily: "Arial",
-            originX: "center",
-            originY: "center",
+            fontSize, fill: textColor, fontWeight: "bold", fontFamily: "Arial",
+            originX: "center", originY: "center",
         });
 
         const group = new Group([circle, text], {
-            ...pos,
-            scaleX: scale,
-            scaleY: scale,
-            originX: "center",
-            originY: "center",
-            selectable: false,
-            evented: true,
-            excludeFromExport: true,
-            hoverCursor: "pointer",
+            ...pos, scaleX: scale, scaleY: scale,
+            originX: "center", originY: "center",
+            selectable: false, evented: true,
+            excludeFromExport: true, hoverCursor: "pointer",
         });
 
-        // 使用元数据系统标记
         this.metadata.set(group, { category: Category.Marker, id });
-
         this.bindHover(group, circle);
         this.canvas.add(group);
         this.groups.set(id, group);
@@ -161,21 +139,16 @@ export class MarkerRenderer {
         }
     }
 
-    private getPosition(marker: MarkerData): { left: number; top: number } | null {
-        const { targetId, nx, ny } = marker;
-
-        // 通过 ID 查找目标对象
+    private getPosition(point: PointData): { left: number; top: number } | null {
+        const { targetId, nx, ny } = point;
         const target = this.metadata.getById(targetId);
         if (!target?.width || !target?.height) return null;
 
         const w = target.width;
         const h = target.height;
-
-        // 归一化 → 局部坐标（中心原点）
         const localX = nx * w - w / 2;
         const localY = ny * h - h / 2;
 
-        // 局部 → 场景坐标
         const [a, b, c, d, tx, ty] = target.calcTransformMatrix();
         return {
             left: a * localX + c * localY + tx,

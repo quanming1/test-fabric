@@ -42,7 +42,7 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.on("object:modified", this.updateToolbar);
 
     // 监听缩放变化
-    this.eventBus.off("zoom:change", this.updateToolbar);
+    this.eventBus.on("zoom:change", this.updateToolbar);
   }
 
   private onSelectionCreated = (): void => {

@@ -1,4 +1,8 @@
 export { MarkerPlugin } from "./MarkerPlugin";
-export { MarkerRenderer } from "./MarkerRenderer";
 export * from "./types";
-export type { MarkerPluginOptions } from "./types";
+
+// 数据层
+export { PointManager, RegionManager } from "./data";
+
+// 渲染层
+export { PointRenderer, RegionRenderer } from "./render";

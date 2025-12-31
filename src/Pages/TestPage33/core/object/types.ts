@@ -8,6 +8,8 @@ export enum Category {
     Marker = "marker",
     /** 图片 */
     Image = "image",
+    /** 标记区域 */
+    Region = "region",
 }
 
 /**
