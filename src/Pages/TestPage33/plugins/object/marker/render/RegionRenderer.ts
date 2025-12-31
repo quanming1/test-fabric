@@ -1,7 +1,8 @@
-import { Rect, type Canvas } from "fabric";
-import type { RegionData, RegionStyle } from "../types";
-import { DEFAULT_REGION_STYLE } from "../types";
+import { Rect, Circle, Text, Group, type Canvas } from "fabric";
+import type { RegionData, RegionStyle, PointStyle } from "../types";
+import { DEFAULT_REGION_STYLE, DEFAULT_POINT_STYLE } from "../types";
 import { Category, type ObjectMetadata } from "../../../../core";
+import { getFullTransformMatrix, extractScaleAndAngle } from "../../../../utils";
 
 /**
  * 区域渲染器
@@ -11,37 +12,63 @@ export class RegionRenderer {
     private canvas: Canvas;
     private metadata: ObjectMetadata;
     private style: RegionStyle;
+    private pointStyle: PointStyle;
     private rects = new Map<string, Rect>();
+    private cornerMarkers = new Map<string, Group>();
 
     constructor(canvas: Canvas, metadata: ObjectMetadata, style: Partial<RegionStyle> = {}) {
         this.canvas = canvas;
         this.metadata = metadata;
         this.style = { ...DEFAULT_REGION_STYLE, ...style };
+        // 右下角标记点使用区域的颜色
+        this.pointStyle = {
+            ...DEFAULT_POINT_STYLE,
+            fill: this.style.stroke,
+            hoverFill: this.style.stroke,
+        };
+    }
+
+    private getZoom(): number {
+        return this.canvas.getZoom() || 1;
     }
 
     /** 同步区域状态 */
     sync(regions: RegionData[]): void {
         const activeIds = new Set(regions.map((r) => r.id));
+        const inverseZoom = 1 / this.getZoom();
 
         // 移除失效的
         for (const [id, rect] of this.rects) {
             if (!activeIds.has(id)) {
                 this.canvas.remove(rect);
                 this.rects.delete(id);
+                const marker = this.cornerMarkers.get(id);
+                if (marker) {
+                    this.canvas.remove(marker);
+                    this.cornerMarkers.delete(id);
+                }
             }
         }
 
         // 创建或更新
-        regions.forEach((region) => {
+        regions.forEach((region, i) => {
             const pos = this.getTransformedRect(region);
             if (!pos) return;
 
             const rect = this.rects.get(region.id);
-            if (rect) {
-                rect.set(pos);
+            const marker = this.cornerMarkers.get(region.id);
+
+            if (rect && marker) {
+                // 更新边框宽度以保持视觉一致
+                rect.set({ ...pos, strokeWidth: this.style.strokeWidth * inverseZoom });
                 rect.setCoords();
+                // 更新右下角标记点位置
+                const cornerPos = this.getCornerPosition(pos);
+                marker.set({ ...cornerPos, scaleX: inverseZoom, scaleY: inverseZoom });
+                marker.setCoords();
+                this.setMarkerLabel(marker, i + 1);
             } else {
-                this.createRegion(region.id, pos);
+                this.createRegion(region.id, pos, i + 1, inverseZoom);
             }
         });
 
@@ -53,7 +80,11 @@ export class RegionRenderer {
         for (const rect of this.rects.values()) {
             this.canvas.remove(rect);
         }
+        for (const marker of this.cornerMarkers.values()) {
+            this.canvas.remove(marker);
+        }
         this.rects.clear();
+        this.cornerMarkers.clear();
     }
 
     /** 获取区域对象 */
@@ -65,6 +96,9 @@ export class RegionRenderer {
     bringToFront(): void {
         for (const rect of this.rects.values()) {
             this.canvas.bringObjectToFront(rect);
+        }
+        for (const marker of this.cornerMarkers.values()) {
+            this.canvas.bringObjectToFront(marker);
         }
     }
 
@@ -82,12 +116,14 @@ export class RegionRenderer {
 
     // ─── Private ─────────────────────────────────────────
 
-    private createRegion(id: string, pos: { left: number; top: number; width: number; height: number; angle: number }): void {
+    private createRegion(id: string, pos: { left: number; top: number; width: number; height: number; angle: number }, label: number, scale: number): void {
         const { fill, stroke, strokeWidth, rx, ry } = this.style;
 
         const rect = new Rect({
-            ...pos, fill, stroke, strokeWidth,
+            ...pos, fill, stroke,
+            strokeWidth: strokeWidth * scale, // 根据缩放调整边框宽度
             strokeUniform: true, rx, ry,
+            strokeDashArray: [6, 4], // 虚线边框
             originX: "left", originY: "top",
             selectable: false, evented: false,
             excludeFromExport: true, hoverCursor: "move",
@@ -96,6 +132,55 @@ export class RegionRenderer {
         this.metadata.set(rect, { category: Category.Region, id });
         this.canvas.add(rect);
         this.rects.set(id, rect);
+
+        // 创建右下角标记点
+        const cornerPos = this.getCornerPosition(pos);
+        this.createCornerMarker(id, cornerPos, label, scale);
+    }
+
+    private createCornerMarker(id: string, pos: { left: number; top: number }, label: number, scale: number): void {
+        const { radius, fill, stroke, strokeWidth, textColor, fontSize } = this.pointStyle;
+
+        const circle = new Circle({
+            radius, fill, stroke, strokeWidth,
+            originX: "center", originY: "center",
+        });
+
+        const text = new Text(String(label), {
+            fontSize, fill: textColor, fontWeight: "bold", fontFamily: "Arial",
+            originX: "center", originY: "center",
+        });
+
+        const group = new Group([circle, text], {
+            ...pos, scaleX: scale, scaleY: scale,
+            originX: "center", originY: "center",
+            selectable: false, evented: false,
+            excludeFromExport: true,
+        });
+
+        this.metadata.set(group, { category: Category.Region, id: `${id}-corner` });
+        this.canvas.add(group);
+        this.cornerMarkers.set(id, group);
+    }
+
+    private getCornerPosition(rect: { left: number; top: number; width: number; height: number; angle: number }): { left: number; top: number } {
+        const { left, top, width, height, angle } = rect;
+        const rad = (angle * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+
+        // 右下角相对于左上角的偏移
+        return {
+            left: left + width * cos - height * sin,
+            top: top + width * sin + height * cos,
+        };
+    }
+
+    private setMarkerLabel(group: Group, label: number): void {
+        const text = group.item(1) as Text;
+        if (text.text !== String(label)) {
+            text.set("text", String(label));
+        }
     }
 
     private getTransformedRect(region: RegionData): { left: number; top: number; width: number; height: number; angle: number } | null {
@@ -105,16 +190,17 @@ export class RegionRenderer {
 
         const tw = target.width;
         const th = target.height;
-        const scaleX = target.scaleX ?? 1;
-        const scaleY = target.scaleY ?? 1;
-        const angle = target.angle ?? 0;
 
         const localX = nx * tw - tw / 2;
         const localY = ny * th - th / 2;
         const localW = nw * tw;
         const localH = nh * th;
 
-        const [a, b, c, d, tx, ty] = target.calcTransformMatrix();
+        // 使用工具函数获取完整变换矩阵
+        const matrix = getFullTransformMatrix(this.canvas, target);
+        const [a, b, c, d, tx, ty] = matrix;
+        const { scaleX, scaleY, angle } = extractScaleAndAngle(matrix);
+
         return {
             left: a * localX + c * localY + tx,
             top: b * localX + d * localY + ty,

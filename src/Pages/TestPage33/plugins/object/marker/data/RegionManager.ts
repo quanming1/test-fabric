@@ -60,6 +60,7 @@ export class RegionManager {
         this.previewRect = new Rect({
             left: scenePt.x, top: scenePt.y, width: 0, height: 0,
             fill, stroke, strokeWidth, strokeUniform: true, rx, ry,
+            strokeDashArray: [6, 4], // 虚线边框
             originX: "left", originY: "top",
             selectable: false, evented: false,
         });

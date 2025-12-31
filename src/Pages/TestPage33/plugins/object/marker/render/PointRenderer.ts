@@ -2,6 +2,7 @@ import { Circle, Text, Group, type Canvas } from "fabric";
 import type { PointData, PointStyle } from "../types";
 import { DEFAULT_POINT_STYLE } from "../types";
 import { Category, type ObjectMetadata } from "../../../../core";
+import { getFullTransformMatrix } from "../../../../utils";
 
 /**
  * 点标记渲染器
@@ -149,7 +150,8 @@ export class PointRenderer {
         const localX = nx * w - w / 2;
         const localY = ny * h - h / 2;
 
-        const [a, b, c, d, tx, ty] = target.calcTransformMatrix();
+        // 使用工具函数获取完整变换矩阵（支持多选）
+        const [a, b, c, d, tx, ty] = getFullTransformMatrix(this.canvas, target);
         return {
             left: a * localX + c * localY + tx,
             top: b * localX + d * localY + ty,
