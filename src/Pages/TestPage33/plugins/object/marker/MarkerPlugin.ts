@@ -227,6 +227,7 @@ export class MarkerPlugin extends BasePlugin {
         this.canvas.off("object:rotating", this.syncAll);
         this.canvas.off("object:modified", this.syncAll);
         this.canvas.off("object:removed", this.onObjectRemoved);
+
         this.eventBus.off("zoom:change", this.syncAll);
         this.eventBus.off("layer:change", this.bringAllToFront);
         this.eventBus.off("mode:change", this.onModeChange);

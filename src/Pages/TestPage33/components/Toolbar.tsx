@@ -6,6 +6,7 @@ import {
   DeleteOutlined,
   SelectOutlined,
   PictureOutlined,
+  GatewayOutlined,
 } from "@ant-design/icons";
 import type { ModePlugin } from "../plugins/mode/ModePlugin";
 import type { MarkerPlugin } from "../plugins/object/marker/MarkerPlugin";
@@ -79,6 +80,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     { mode: EditorMode.Select, icon: <SelectOutlined />, label: "选择模式" },
     { mode: EditorMode.Pan, icon: <DragOutlined />, label: "拖拽模式" },
     { mode: EditorMode.DrawRect, icon: <BorderOutlined />, label: "绘制矩形" },
+    { mode: EditorMode.RangeSelect, icon: <GatewayOutlined />, label: "区域选择" },
   ];
 
   /** 获取当前模式的图标 */
