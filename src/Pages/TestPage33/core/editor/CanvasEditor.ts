@@ -48,6 +48,11 @@ export class CanvasEditor {
         return this.plugins.get(name) as T | undefined;
     }
 
+    /** 获取所有插件 */
+    getPlugins(): Map<string, Plugin> {
+        return this.plugins;
+    }
+
     /** 设置画布尺寸 */
     setSize(width: number, height: number): void {
         const w = Math.max(1, width);

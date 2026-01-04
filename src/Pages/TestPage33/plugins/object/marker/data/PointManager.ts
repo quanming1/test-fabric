@@ -78,6 +78,13 @@ export class PointManager {
         this.emitChange();
     };
 
+    /** 加载标记点数据 */
+    load = (data: PointData[]): void => {
+        this.points = [...data];
+        this.emitChange();
+        this.sync();
+    };
+
     /** 同步渲染 */
     sync = (): void => {
         this.renderer.sync(this.points);

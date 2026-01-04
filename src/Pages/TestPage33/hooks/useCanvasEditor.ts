@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ZoomPlugin, SelectionPlugin, MarkerPlugin, ModePlugin, DrawPlugin, ImagePlugin } from "../plugins";
+import { ZoomPlugin, SelectionPlugin, MarkerPlugin, ModePlugin, DrawPlugin, ImagePlugin, ImportExportPlugin } from "../plugins";
 import { CanvasEditor } from "../core";
 
 export interface UseCanvasEditorReturn {
@@ -34,7 +34,8 @@ export function useCanvasEditor(
       .use(new SelectionPlugin())
       .use(new DrawPlugin())
       .use(new MarkerPlugin())
-      .use(new ImagePlugin());
+      .use(new ImagePlugin())
+      .use(new ImportExportPlugin());
 
     // 响应式尺寸
     let ro: ResizeObserver | null = null;

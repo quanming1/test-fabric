@@ -13,6 +13,23 @@ export interface Plugin {
 
   /** 销毁插件，清理事件监听等资源 */
   destroy(): void;
+
+  // ─── 可选：序列化支持 ─────────────────────────────────
+
+  /** 是否支持序列化 */
+  serializable?: boolean;
+
+  /** 导入优先级，数值越小越先导入，默认 0 */
+  importOrder?: number;
+
+  /** 导出插件数据 */
+  exportData?(): unknown;
+
+  /** 导入插件数据 */
+  importData?(data: unknown): void;
+
+  /** 清空插件数据 */
+  clearAll?(): void;
 }
 
 /**
@@ -23,6 +40,21 @@ export abstract class BasePlugin implements Plugin {
   abstract readonly name: string;
   protected editor!: CanvasEditor;
   protected disposed = false;
+
+  /** 是否支持序列化，子类设为 true 并实现 exportData/importData */
+  serializable = false;
+
+  /** 导入优先级，数值越小越先导入 */
+  importOrder = 0;
+
+  /** 导出插件数据，子类实现 */
+  exportData?(): unknown;
+
+  /** 导入插件数据，子类实现 */
+  importData?(data: unknown): void;
+
+  /** 清空插件数据，子类实现 */
+  clearAll?(): void;
 
   install(editor: CanvasEditor): void {
     this.editor = editor;

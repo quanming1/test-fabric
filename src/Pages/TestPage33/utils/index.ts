@@ -1,6 +1,8 @@
 import type { FabricObject, Canvas, ActiveSelection } from "fabric";
 import { util } from "fabric";
 
+export * from "./file";
+
 export function openFilePicker(options?: {
     accept?: string;
     multiple?: boolean;

@@ -148,6 +148,13 @@ export class RegionManager {
         this.emitChange();
     };
 
+    /** 加载区域数据 */
+    load = (data: RegionData[]): void => {
+        this.regions = [...data];
+        this.emitChange();
+        this.sync();
+    };
+
     /** 同步渲染 */
     sync = (): void => {
         this.renderer.sync(this.regions);

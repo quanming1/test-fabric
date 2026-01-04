@@ -7,10 +7,13 @@ import {
   SelectOutlined,
   PictureOutlined,
   GatewayOutlined,
+  DownloadOutlined,
+  UploadOutlined,
 } from "@ant-design/icons";
 import type { ModePlugin } from "../plugins/mode/ModePlugin";
 import type { MarkerPlugin } from "../plugins/object/marker/MarkerPlugin";
 import type { ImagePlugin } from "../plugins/object/image/ImagePlugin";
+import type { ImportExportPlugin } from "../plugins/io/ImportExportPlugin";
 import { EditorMode } from "../plugins/mode/ModePlugin";
 import { useEditorEvent } from "../hooks";
 import styles from "../index.module.scss";
@@ -106,6 +109,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     }
   };
 
+  /** 导出为 JSON */
+  const handleExport = () => {
+    editor?.getPlugin<ImportExportPlugin>("io")?.export({ download: "canvas.json" });
+  };
+
+  /** 导入 JSON */
+  const handleImport = () => {
+    editor?.getPlugin<ImportExportPlugin>("io")?.import();
+  };
+
   // ============ 工具栏配置 ============
   /**
    * 工具按钮分组配置
@@ -122,7 +135,22 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
           onClick: handleUploadImage,
         },
       ],
-      // 第二组：危险操作
+      // 第二组：导入导出
+      [
+        {
+          key: "export",
+          icon: <DownloadOutlined />,
+          tooltip: "导出 JSON",
+          onClick: handleExport,
+        },
+        {
+          key: "import",
+          icon: <UploadOutlined />,
+          tooltip: "导入 JSON",
+          onClick: handleImport,
+        },
+      ],
+      // 第三组：危险操作
       [
         {
           key: "clear",

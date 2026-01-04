@@ -2,7 +2,7 @@ import type { FabricObject } from "fabric";
 import { BasePlugin } from "../../base/Plugin";
 import { PointManager } from "./data/PointManager";
 import { RegionManager } from "./data/RegionManager";
-import type { MarkerPluginOptions, PointStyle, RegionStyle, RegionData } from "./types";
+import type { MarkerPluginOptions, PointStyle, RegionStyle, RegionData, PointData } from "./types";
 import { Category, type MarkPoint } from "../../../core";
 import { EditorMode, ModePlugin } from "../../mode/ModePlugin";
 import { MarkerPluginState } from "./helper/MarkerPluginState";
@@ -19,6 +19,8 @@ const DEFAULT_MARKABLE_CATEGORIES: Category[] = [Category.DrawRect, Category.Ima
  */
 export class MarkerPlugin extends BasePlugin {
     readonly name = "marker";
+    override serializable = true;
+    override importOrder = 10; // 在画布对象加载后再导入
 
     private pointManager!: PointManager;
     private regionManager!: RegionManager;
@@ -89,6 +91,46 @@ export class MarkerPlugin extends BasePlugin {
 
     setRegionStyle(style: Partial<RegionStyle>): void {
         this.regionManager.setStyle(style);
+    }
+
+    // ─── 导入导出 API ─────────────────────────────────────────
+
+    /** 获取原始点数据（用于导出） */
+    getPointsData(): PointData[] {
+        return this.pointManager.rawData;
+    }
+
+    /** 获取原始区域数据（用于导出） */
+    getRegionsData(): RegionData[] {
+        return this.regionManager.data;
+    }
+
+    /** 加载点数据（用于导入） */
+    loadPoints(data: PointData[]): void {
+        this.pointManager.load(data);
+    }
+
+    /** 加载区域数据（用于导入） */
+    loadRegions(data: RegionData[]): void {
+        this.regionManager.load(data);
+    }
+
+    /** 导出所有 marker 数据 */
+    exportData(): { points: PointData[]; regions: RegionData[] } {
+        return {
+            points: this.getPointsData(),
+            regions: this.getRegionsData(),
+        };
+    }
+
+    /** 导入所有 marker 数据 */
+    importData(data: { points?: PointData[]; regions?: RegionData[] }): void {
+        if (data.points) {
+            this.loadPoints(data.points);
+        }
+        if (data.regions) {
+            this.loadRegions(data.regions);
+        }
     }
 
     // ─── 私有方法 ─────────────────────────────────────────

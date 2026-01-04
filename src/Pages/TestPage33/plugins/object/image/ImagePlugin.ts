@@ -1,7 +1,10 @@
-import { FabricImage } from "fabric";
+import { FabricImage, type FabricObject, type TOptions, type ImageProps } from "fabric";
 import { BasePlugin } from "../../base/Plugin";
 import { Category, genId } from "../../../core";
-import { EditorMode, ModePlugin } from "../../mode/ModePlugin";
+import { EditorMode } from "../../mode/ModePlugin";
+
+/** 图片需要额外序列化的属性 */
+const EXTRA_PROPS = ["data", "src", "crossOrigin"] as const;
 
 /**
  * 图片插件
@@ -10,6 +13,8 @@ import { EditorMode, ModePlugin } from "../../mode/ModePlugin";
  */
 export class ImagePlugin extends BasePlugin {
     readonly name = "image";
+    override serializable = true;
+    override importOrder = 5;
 
     protected onInstall(): void {
         this.canvas.on("object:added", this.onObjectAdded);
@@ -145,5 +150,38 @@ export class ImagePlugin extends BasePlugin {
     protected onDestroy(): void {
         this.canvas.off("object:added", this.onObjectAdded);
         this.eventBus.off("mode:change", this.onModeChange);
+    }
+
+    // ─── 序列化 ─────────────────────────────────────────
+
+    /** 获取所有图片对象 */
+    private get imageList(): FabricObject[] {
+        return this.editor.metadata.filter("category", Category.Image);
+    }
+
+    /** 导出所有图片数据 */
+    exportData(): object[] {
+        return this.imageList.map((obj) => obj.toObject([...EXTRA_PROPS]));
+    }
+
+    /** 导入图片数据 */
+    async importData(data: object[]): Promise<void> {
+        if (!Array.isArray(data)) return;
+
+        for (const item of data) {
+            const img = await FabricImage.fromObject(item as TOptions<ImageProps>);
+            this.canvas.add(img as unknown as FabricObject);
+        }
+
+        const modePlugin = this.editor.getPlugin<any>("mode");
+        const mode = modePlugin?.mode as EditorMode;
+        if (mode) this.onModeChange({ mode });
+        this.canvas.requestRenderAll();
+    }
+
+    /** 清空所有图片 */
+    clearAll(): void {
+        this.imageList.forEach((obj) => this.canvas.remove(obj));
+        this.canvas.requestRenderAll();
     }
 }
