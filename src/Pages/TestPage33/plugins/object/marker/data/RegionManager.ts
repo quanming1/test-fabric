@@ -1,6 +1,5 @@
-import { Point, Rect, util, type Canvas, type FabricObject } from "fabric";
+import { Point, util, type Canvas, type FabricObject } from "fabric";
 import type { RegionData, RegionStyle } from "../types";
-import { DEFAULT_REGION_STYLE } from "../types";
 import { RegionRenderer } from "../render/RegionRenderer";
 import { genId, type ObjectMetadata, type EventBus } from "../../../../core";
 
@@ -30,7 +29,6 @@ export class RegionManager {
     private drawStartY = 0;
     private drawTarget: FabricObject | null = null;
     private drawTargetId: string | null = null;
-    private previewRect: Rect | null = null;
 
     constructor(options: RegionManagerOptions) {
         this.canvas = options.canvas;
@@ -56,28 +54,13 @@ export class RegionManager {
         this.drawTarget = target;
         this.drawTargetId = targetId;
 
-        const { fill, stroke, strokeWidth, rx, ry } = DEFAULT_REGION_STYLE;
-        this.previewRect = new Rect({
-            left: scenePt.x, top: scenePt.y, width: 0, height: 0,
-            fill, stroke, strokeWidth, strokeUniform: true, rx, ry,
-            strokeDashArray: [6, 4], // 虚线边框
-            originX: "left", originY: "top",
-            selectable: false, evented: false,
-        });
-        this.canvas.add(this.previewRect);
+        this.renderer.createPreview(scenePt);
     }
 
     /** 更新绘制预览 */
     updateDraw(scenePt: { x: number; y: number }): void {
-        if (!this.isDrawing || !this.previewRect) return;
-
-        const left = Math.min(this.drawStartX, scenePt.x);
-        const top = Math.min(this.drawStartY, scenePt.y);
-        const width = Math.abs(scenePt.x - this.drawStartX);
-        const height = Math.abs(scenePt.y - this.drawStartY);
-
-        this.previewRect.set({ left, top, width, height });
-        this.canvas.requestRenderAll();
+        if (!this.isDrawing) return;
+        this.renderer.updatePreview({ x: this.drawStartX, y: this.drawStartY }, scenePt);
     }
 
     /** 结束绘制，返回是否为拖动 */
@@ -87,10 +70,7 @@ export class RegionManager {
         const dx = Math.abs(scenePt.x - this.drawStartX);
         const dy = Math.abs(scenePt.y - this.drawStartY);
 
-        if (this.previewRect) {
-            this.canvas.remove(this.previewRect);
-            this.previewRect = null;
-        }
+        this.renderer.removePreview();
 
         const isDrag = dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD;
 
@@ -192,10 +172,7 @@ export class RegionManager {
 
     /** 销毁 */
     destroy(): void {
-        if (this.previewRect) {
-            this.canvas.remove(this.previewRect);
-            this.previewRect = null;
-        }
+        this.renderer.removePreview();
         this.renderer.clear();
     }
 

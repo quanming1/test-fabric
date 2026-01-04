@@ -6,7 +6,7 @@ import { getFullTransformMatrix, extractScaleAndAngle } from "../../../../utils"
 
 /**
  * 区域渲染器
- * 职责：管理标记区域的创建、更新、删除
+ * 职责：管理标记区域的创建、更新、删除、预览绘制
  */
 export class RegionRenderer {
     private canvas: Canvas;
@@ -15,6 +15,7 @@ export class RegionRenderer {
     private pointStyle: PointStyle;
     private rects = new Map<string, Rect>();
     private cornerMarkers = new Map<string, Group>();
+    private previewRect: Rect | null = null;
 
     constructor(canvas: Canvas, metadata: ObjectMetadata, style: Partial<RegionStyle> = {}) {
         this.canvas = canvas;
@@ -54,7 +55,6 @@ export class RegionRenderer {
         regions.forEach((region, i) => {
             const pos = this.getTransformedRect(region);
             if (!pos) return;
-
             const rect = this.rects.get(region.id);
             const marker = this.cornerMarkers.get(region.id);
 
@@ -112,6 +112,42 @@ export class RegionRenderer {
         this.metadata.filter("category", Category.Region).forEach((obj) => {
             obj.evented = evented;
         });
+    }
+
+    // ─── 预览框相关 ─────────────────────────────────────────
+
+    /** 创建预览框 */
+    createPreview(scenePt: { x: number; y: number }): void {
+        const { fill, stroke, strokeWidth, rx, ry } = this.style;
+        this.previewRect = new Rect({
+            left: scenePt.x, top: scenePt.y, width: 0, height: 0,
+            fill, stroke, strokeWidth, strokeUniform: true, rx, ry,
+            strokeDashArray: [6, 4],
+            originX: "left", originY: "top",
+            selectable: false, evented: false,
+        });
+        this.canvas.add(this.previewRect);
+    }
+
+    /** 更新预览框 */
+    updatePreview(startPt: { x: number; y: number }, currentPt: { x: number; y: number }): void {
+        if (!this.previewRect) return;
+
+        const left = Math.min(startPt.x, currentPt.x);
+        const top = Math.min(startPt.y, currentPt.y);
+        const width = Math.abs(currentPt.x - startPt.x);
+        const height = Math.abs(currentPt.y - startPt.y);
+
+        this.previewRect.set({ left, top, width, height });
+        this.canvas.requestRenderAll();
+    }
+
+    /** 移除预览框 */
+    removePreview(): void {
+        if (this.previewRect) {
+            this.canvas.remove(this.previewRect);
+            this.previewRect = null;
+        }
     }
 
     // ─── Private ─────────────────────────────────────────
