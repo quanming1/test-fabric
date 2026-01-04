@@ -50,6 +50,8 @@ export class PointManager {
 
         const point: PointData = { id: genId("pt"), targetId, nx, ny };
 
+        console.log('point', point)
+
         this.points.push(point);
         this.emitChange();
         this.sync();

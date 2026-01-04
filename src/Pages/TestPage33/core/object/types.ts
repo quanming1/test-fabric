@@ -10,6 +10,8 @@ export enum Category {
     Image = "image",
     /** 标记区域 */
     Region = "region",
+    /** 辅助线 */
+    Guideline = "guideline",
 }
 
 /**

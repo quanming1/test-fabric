@@ -23,3 +23,7 @@ export { ImagePlugin } from "./object/image";
 // IO (Import/Export)
 export { ImportExportPlugin } from "./io";
 export type { ExportOptions, ImportOptions, CanvasJSON, IOEvents } from "./io";
+
+// Guidelines
+export { GuidelinesPlugin } from "./guidelines";
+export type { GuidelinesPluginOptions, GuidelinesStyle, Guideline } from "./guidelines";
