@@ -23,8 +23,8 @@ export class ImageHistoryHandler {
     private pluginName: string;
     private getImageList: () => FabricObject[];
 
-    /** 拖拽开始时的快照 */
-    private dragStartSnapshots = new Map<string, ObjectSnapshot>();
+    /** 变换开始时的快照 */
+    private transformStartSnapshots = new Map<string, ObjectSnapshot>();
 
     constructor(options: ImageHistoryHandlerOptions) {
         this.editor = options.editor;
@@ -64,18 +64,18 @@ export class ImageHistoryHandler {
         return { id, data };
     }
 
-    // ─── 拖拽记录 ─────────────────────────────────────────
+    // ─── 变换记录 ─────────────────────────────────────────
 
     /**
-     * 拖拽开始时记录快照
+     * 变换开始时记录快照
      */
-    onDragStart(objects: FabricObject[]): void {
-        this.dragStartSnapshots.clear();
+    onTransformStart(objects: FabricObject[]): void {
+        this.transformStartSnapshots.clear();
         for (const obj of objects) {
             if (!this.editor.metadata.is(obj, "category", Category.Image)) continue;
             const id = this.editor.metadata.get(obj)?.id;
             if (id) {
-                this.dragStartSnapshots.set(id, this.createSnapshot(obj));
+                this.transformStartSnapshots.set(id, this.createSnapshot(obj));
             }
         }
     }
@@ -98,7 +98,7 @@ export class ImageHistoryHandler {
             const id = this.editor.metadata.get(obj)?.id;
             if (!id) continue;
 
-            const beforeSnapshot = this.dragStartSnapshots.get(id);
+            const beforeSnapshot = this.transformStartSnapshots.get(id);
             if (beforeSnapshot) {
                 beforeSnapshots.push(beforeSnapshot);
                 afterSnapshots.push(this.createSnapshot(obj));
@@ -110,7 +110,7 @@ export class ImageHistoryHandler {
             this.recordModify(objectIds, beforeSnapshots, afterSnapshots);
         }
 
-        this.dragStartSnapshots.clear();
+        this.transformStartSnapshots.clear();
     }
 
     // ─── 记录操作 ─────────────────────────────────────────

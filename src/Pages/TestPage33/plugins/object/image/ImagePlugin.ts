@@ -30,7 +30,7 @@ export class ImagePlugin extends BasePlugin {
         this.canvas.on("object:added", this.onObjectAdded);
         this.canvas.on("object:modified", this.onObjectModified);
         this.eventBus.on("mode:change", this.onModeChange);
-        this.eventBus.on("object:dragStart", this.onDragStart);
+        this.eventBus.on("object:transformStart", this.onTransformStart);
     }
 
     /** 各模式下图片的交互配置 */
@@ -43,8 +43,8 @@ export class ImagePlugin extends BasePlugin {
 
     // ─── 历史记录事件 ─────────────────────────────────────────
 
-    private onDragStart = (objects: FabricObject[]): void => {
-        this.historyHandler.onDragStart(objects);
+    private onTransformStart = (objects: FabricObject[]): void => {
+        this.historyHandler.onTransformStart(objects);
     };
 
     private onObjectModified = (opt: any): void => {
@@ -200,7 +200,7 @@ export class ImagePlugin extends BasePlugin {
         this.canvas.off("object:added", this.onObjectAdded);
         this.canvas.off("object:modified", this.onObjectModified);
         this.eventBus.off("mode:change", this.onModeChange);
-        this.eventBus.off("object:dragStart", this.onDragStart);
+        this.eventBus.off("object:transformStart", this.onTransformStart);
     }
 
     // ─── 序列化 ─────────────────────────────────────────

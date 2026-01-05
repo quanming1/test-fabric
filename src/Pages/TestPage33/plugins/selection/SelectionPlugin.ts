@@ -9,14 +9,14 @@ import type { MarkerPlugin } from "../object/marker/MarkerPlugin";
 /**
  * 选择插件
  * 功能：对象选择、浮动工具栏定位
- * 事件：selection:change, toolbar:update, object:dragStart
+ * 事件：selection:change, toolbar:update, object:transformStart
  */
 export class SelectionPlugin extends BasePlugin {
   readonly name = "selection";
 
   private activeObject: FabricObject | null = null;
-  /** 是否正在拖拽 */
-  private isDragging = false;
+  /** 是否正在变换（拖拽/缩放/旋转） */
+  private isTransforming = false;
 
   /** 当前选中对象（单选或 ActiveSelection） */
   get selected(): FabricObject | null {
@@ -41,9 +41,9 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.on("selection:created", this.onSelectionCreated);
     this.canvas.on("selection:updated", this.onSelectionUpdated);
     this.canvas.on("selection:cleared", this.onSelectionCleared);
-    this.canvas.on("object:moving", this.onObjectMoving);
-    this.canvas.on("object:scaling", this.updateToolbar);
-    this.canvas.on("object:rotating", this.updateToolbar);
+    this.canvas.on("object:moving", this.onTransformStart);
+    this.canvas.on("object:scaling", this.onTransformStart);
+    this.canvas.on("object:rotating", this.onTransformStart);
     this.canvas.on("object:modified", this.onObjectModified);
 
     // 监听缩放变化
@@ -69,26 +69,26 @@ export class SelectionPlugin extends BasePlugin {
   };
 
   /**
-   * 对象开始移动时触发拖拽开始事件
+   * 变换开始时（移动/缩放/旋转）触发事件记录初始状态
    */
-  private onObjectMoving = (opt: any): void => {
+  private onTransformStart = (): void => {
     this.updateToolbar();
 
-    // 只在拖拽开始时触发一次
-    if (!this.isDragging) {
-      this.isDragging = true;
+    // 只在变换开始时触发一次
+    if (!this.isTransforming) {
+      this.isTransforming = true;
       const objects = this.selectedObjects;
       if (objects.length > 0) {
-        this.eventBus.emit("object:dragStart", objects);
+        this.eventBus.emit("object:transformStart", objects);
       }
     }
   };
 
   /**
-   * 对象修改完成时重置拖拽状态
+   * 对象修改完成时重置变换状态
    */
   private onObjectModified = (): void => {
-    this.isDragging = false;
+    this.isTransforming = false;
     this.updateToolbar();
   };
 
@@ -209,9 +209,9 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.off("selection:created", this.onSelectionCreated);
     this.canvas.off("selection:updated", this.onSelectionUpdated);
     this.canvas.off("selection:cleared", this.onSelectionCleared);
-    this.canvas.off("object:moving", this.onObjectMoving);
-    this.canvas.off("object:scaling", this.updateToolbar);
-    this.canvas.off("object:rotating", this.updateToolbar);
+    this.canvas.off("object:moving", this.onTransformStart);
+    this.canvas.off("object:scaling", this.onTransformStart);
+    this.canvas.off("object:rotating", this.onTransformStart);
     this.canvas.off("object:modified", this.onObjectModified);
     this.eventBus.off("zoom:change", this.updateToolbar);
   }
