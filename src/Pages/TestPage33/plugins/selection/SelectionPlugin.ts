@@ -2,16 +2,21 @@ import { type FabricObject, ActiveSelection } from "fabric";
 import { BasePlugin } from "../base/Plugin";
 import { CoordinateHelper } from "../../core";
 import type { ToolbarPosition } from "../../core/types";
+import type { DrawPlugin } from "../draw/DrawPlugin";
+import type { ImagePlugin } from "../object/image/ImagePlugin";
+import type { MarkerPlugin } from "../object/marker/MarkerPlugin";
 
 /**
  * 选择插件
  * 功能：对象选择、浮动工具栏定位
- * 事件：selection:change, toolbar:update
+ * 事件：selection:change, toolbar:update, object:dragStart
  */
 export class SelectionPlugin extends BasePlugin {
   readonly name = "selection";
 
   private activeObject: FabricObject | null = null;
+  /** 是否正在拖拽 */
+  private isDragging = false;
 
   /** 当前选中对象（单选或 ActiveSelection） */
   get selected(): FabricObject | null {
@@ -36,10 +41,10 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.on("selection:created", this.onSelectionCreated);
     this.canvas.on("selection:updated", this.onSelectionUpdated);
     this.canvas.on("selection:cleared", this.onSelectionCleared);
-    this.canvas.on("object:moving", this.updateToolbar);
+    this.canvas.on("object:moving", this.onObjectMoving);
     this.canvas.on("object:scaling", this.updateToolbar);
     this.canvas.on("object:rotating", this.updateToolbar);
-    this.canvas.on("object:modified", this.updateToolbar);
+    this.canvas.on("object:modified", this.onObjectModified);
 
     // 监听缩放变化
     this.eventBus.on("zoom:change", this.updateToolbar);
@@ -61,6 +66,30 @@ export class SelectionPlugin extends BasePlugin {
     this.activeObject = null;
     this.eventBus.emit("selection:change", null);
     this.eventBus.emit("toolbar:update", { x: 0, y: 0, visible: false });
+  };
+
+  /**
+   * 对象开始移动时触发拖拽开始事件
+   */
+  private onObjectMoving = (opt: any): void => {
+    this.updateToolbar();
+
+    // 只在拖拽开始时触发一次
+    if (!this.isDragging) {
+      this.isDragging = true;
+      const objects = this.selectedObjects;
+      if (objects.length > 0) {
+        this.eventBus.emit("object:dragStart", objects);
+      }
+    }
+  };
+
+  /**
+   * 对象修改完成时重置拖拽状态
+   */
+  private onObjectModified = (): void => {
+    this.isDragging = false;
+    this.updateToolbar();
   };
 
   private updateToolbar = (): void => {
@@ -156,6 +185,15 @@ export class SelectionPlugin extends BasePlugin {
     const objects = this.selectedObjects;
     if (objects.length === 0) return;
 
+    // 在删除前，通知各插件记录历史
+    const drawPlugin = this.editor.getPlugin<DrawPlugin>("draw");
+    const imagePlugin = this.editor.getPlugin<ImagePlugin>("image");
+    const markerPlugin = this.editor.getPlugin<MarkerPlugin>("marker");
+
+    drawPlugin?.recordDelete(objects);
+    imagePlugin?.recordDelete(objects);
+    markerPlugin?.recordDelete(objects);
+
     this.canvas.discardActiveObject();
     objects.forEach((obj) => {
       this.canvas.remove(obj);
@@ -171,10 +209,10 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.off("selection:created", this.onSelectionCreated);
     this.canvas.off("selection:updated", this.onSelectionUpdated);
     this.canvas.off("selection:cleared", this.onSelectionCleared);
-    this.canvas.off("object:moving", this.updateToolbar);
+    this.canvas.off("object:moving", this.onObjectMoving);
     this.canvas.off("object:scaling", this.updateToolbar);
     this.canvas.off("object:rotating", this.updateToolbar);
-    this.canvas.off("object:modified", this.updateToolbar);
+    this.canvas.off("object:modified", this.onObjectModified);
     this.eventBus.off("zoom:change", this.updateToolbar);
   }
 }

@@ -1,10 +1,8 @@
-import { Rect, type FabricObject, type TOptions, type RectProps } from "fabric";
+import { Rect, type FabricObject, type RectProps } from "fabric";
 import { BasePlugin } from "../base/Plugin";
 import { EditorMode } from "../mode/ModePlugin";
-import { Category, genId } from "../../core";
-
-/** DrawRect 需要额外序列化的属性 */
-const EXTRA_PROPS = ["data"] as const;
+import { Category, genId, type HistoryRecord } from "../../core";
+import { DrawHistoryHandler } from "./DrawHistoryHandler";
 
 /** DrawRect 默认样式 */
 const RECT_STYLE: Partial<RectProps> = {
@@ -17,6 +15,9 @@ const RECT_STYLE: Partial<RectProps> = {
     rx: 4,
     ry: 4,
 };
+
+/** DrawRect 需要额外序列化的属性 */
+const EXTRA_PROPS = ["data"] as const;
 
 /**
  * 绘制插件
@@ -32,6 +33,7 @@ export class DrawPlugin extends BasePlugin {
     private startX = 0;
     private startY = 0;
     private currentRect: Rect | null = null;
+    private historyHandler!: DrawHistoryHandler;
 
     /** 获取所有 DrawRect 对象 */
     private get drawRectList(): FabricObject[] {
@@ -41,11 +43,20 @@ export class DrawPlugin extends BasePlugin {
     }
 
     protected onInstall(): void {
+        this.historyHandler = new DrawHistoryHandler({
+            editor: this.editor,
+            historyManager: this.editor.history,
+            pluginName: this.name,
+            getDrawRectList: () => this.drawRectList,
+        });
+
         this.canvas.on("mouse:down", this.onMouseDown);
         this.canvas.on("mouse:move", this.onMouseMove);
         this.canvas.on("mouse:up", this.onMouseUp);
         this.canvas.on("object:added", this.onObjectAdded);
+        this.canvas.on("object:modified", this.onObjectModified);
         this.eventBus.on("mode:change", this.onModeChange);
+        this.eventBus.on("object:dragStart", this.onDragStart);
     }
 
     protected onDestroy(): void {
@@ -53,22 +64,69 @@ export class DrawPlugin extends BasePlugin {
         this.canvas.off("mouse:move", this.onMouseMove);
         this.canvas.off("mouse:up", this.onMouseUp);
         this.canvas.off("object:added", this.onObjectAdded);
+        this.canvas.off("object:modified", this.onObjectModified);
         this.eventBus.off("mode:change", this.onModeChange);
+        this.eventBus.off("object:dragStart", this.onDragStart);
+    }
+
+    // ─── 历史记录事件 ─────────────────────────────────────────
+
+    private onDragStart = (objects: FabricObject[]): void => {
+        this.historyHandler.onDragStart(objects);
+    };
+
+    private onObjectModified = (opt: any): void => {
+        const target = opt.target as FabricObject;
+        if (!target) return;
+
+        const objects = target.type === "activeselection"
+            ? (target as any).getObjects() as FabricObject[]
+            : [target];
+
+        this.historyHandler.onObjectModified(objects);
+    };
+
+    applyUndo(record: HistoryRecord): void {
+        this.historyHandler.applyUndo(record);
+    }
+
+    applyRedo(record: HistoryRecord): void {
+        this.historyHandler.applyRedo(record);
+    }
+
+    recordDelete(objects: FabricObject[]): void {
+        const rects = objects.filter((obj) =>
+            this.editor.metadata.is(obj, "category", Category.DrawRect)
+        );
+        if (rects.length === 0) return;
+
+        const objectIds: string[] = [];
+        const beforeSnapshots = [];
+
+        for (const obj of rects) {
+            const id = this.editor.metadata.get(obj)?.id;
+            if (id) {
+                objectIds.push(id);
+                beforeSnapshots.push(this.historyHandler.createSnapshot(obj, true));
+            }
+        }
+
+        if (objectIds.length > 0) {
+            this.historyHandler.recordRemove(objectIds, beforeSnapshots);
+        }
     }
 
     // ─── 序列化 ─────────────────────────────────────────
 
-    /** 导出所有 DrawRect 数据 */
     exportData(): object[] {
         return this.drawRectList.map((obj) => obj.toObject([...EXTRA_PROPS]));
     }
 
-    /** 导入 DrawRect 数据 */
     async importData(data: object[]): Promise<void> {
         if (!Array.isArray(data)) return;
 
         for (const item of data) {
-            const rect = await Rect.fromObject(item as TOptions<RectProps>);
+            const rect = await Rect.fromObject(item as any);
             this.canvas.add(rect as unknown as FabricObject);
         }
 
@@ -77,7 +135,6 @@ export class DrawPlugin extends BasePlugin {
         this.canvas.requestRenderAll();
     }
 
-    /** 清空所有 DrawRect 对象 */
     clearAll(): void {
         this.drawRectList.forEach((obj) => this.canvas.remove(obj));
         this.canvas.requestRenderAll();
@@ -171,7 +228,12 @@ export class DrawPlugin extends BasePlugin {
         }
 
         this.currentRect.set({ ...RECT_STYLE, selectable: true, evented: true });
-        this.editor.metadata.set(this.currentRect, { category: Category.DrawRect, id: genId("rect") });
+        const id = genId("rect");
+        this.editor.metadata.set(this.currentRect, { category: Category.DrawRect, id });
+
+        // 记录添加操作
+        const snapshot = this.historyHandler.createSnapshot(this.currentRect);
+        this.historyHandler.recordAdd([id], [snapshot]);
 
         this.canvas.requestRenderAll();
         this.eventBus.emit("draw:complete", this.currentRect);

@@ -1,13 +1,16 @@
 import { Point, util, type Canvas, type FabricObject } from "fabric";
 import type { RegionData, RegionStyle } from "../types";
 import { RegionRenderer } from "../render/RegionRenderer";
-import { genId, type ObjectMetadata, type EventBus } from "../../../../core";
+import { genId, type ObjectMetadata, type EventBus, type HistoryManager, type HistoryRecord } from "../../../../core";
+import { RegionHistoryHandler } from "./RegionHistoryHandler";
 
 export interface RegionManagerOptions {
     canvas: Canvas;
     metadata: ObjectMetadata;
     eventBus: EventBus;
     style?: Partial<RegionStyle>;
+    historyManager: HistoryManager;
+    pluginName: string;
 }
 
 /** 判断是否为拖动的最小距离阈值 */
@@ -22,6 +25,7 @@ export class RegionManager {
     private renderer: RegionRenderer;
     private canvas: Canvas;
     private eventBus: EventBus;
+    private historyHandler: RegionHistoryHandler;
 
     // 绘制状态
     private isDrawing = false;
@@ -34,6 +38,12 @@ export class RegionManager {
         this.canvas = options.canvas;
         this.eventBus = options.eventBus;
         this.renderer = new RegionRenderer(options.canvas, options.metadata, options.style);
+        this.historyHandler = new RegionHistoryHandler({
+            historyManager: options.historyManager,
+            pluginName: options.pluginName,
+            addRegion: this.addDirect,
+            removeRegion: this.removeDirect,
+        });
     }
 
     /** 获取区域数据 */
@@ -121,6 +131,7 @@ export class RegionManager {
         const region: RegionData = { id: genId("region"), targetId, nx, ny, nw, nh };
 
         this.regions.push(region);
+        this.historyHandler.recordAdd(region);
         this.emitChange();
         this.sync();
 
@@ -129,6 +140,15 @@ export class RegionManager {
 
     /** 移除区域 */
     remove = (id: string): void => {
+        const region = this.regions.find(r => r.id === id);
+        if (region) {
+            this.historyHandler.recordRemove(region);
+        }
+        this.removeDirect(id);
+    };
+
+    /** 直接移除（内部使用，撤销/重做时调用） */
+    private removeDirect = (id: string): void => {
         this.regions = this.regions.filter((r) => r.id !== id);
         this.emitChange();
         this.sync();
@@ -151,6 +171,13 @@ export class RegionManager {
     /** 加载区域数据 */
     load = (data: RegionData[]): void => {
         this.regions = [...data];
+        this.emitChange();
+        this.sync();
+    };
+
+    /** 直接添加（内部使用，撤销/重做时调用） */
+    private addDirect = (region: RegionData): void => {
+        this.regions.push(region);
         this.emitChange();
         this.sync();
     };
@@ -186,4 +213,14 @@ export class RegionManager {
     private emitChange = (): void => {
         this.eventBus.emit("regions:change", this.regions);
     };
+
+    // ─── 历史记录委托 ─────────────────────────────────────────
+
+    applyUndo(record: HistoryRecord): void {
+        this.historyHandler.applyUndo(record);
+    }
+
+    applyRedo(record: HistoryRecord): void {
+        this.historyHandler.applyRedo(record);
+    }
 }

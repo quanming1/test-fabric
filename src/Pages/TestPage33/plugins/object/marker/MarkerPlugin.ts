@@ -3,7 +3,7 @@ import { BasePlugin } from "../../base/Plugin";
 import { PointManager } from "./data/PointManager";
 import { RegionManager } from "./data/RegionManager";
 import type { MarkerPluginOptions, PointStyle, RegionStyle, RegionData, PointData } from "./types";
-import { Category, type MarkPoint } from "../../../core";
+import { Category, type MarkPoint, type HistoryRecord } from "../../../core";
 import { EditorMode, ModePlugin } from "../../mode/ModePlugin";
 import { MarkerPluginState } from "./helper/MarkerPluginState";
 
@@ -41,6 +41,8 @@ export class MarkerPlugin extends BasePlugin {
             metadata: this.editor.metadata,
             eventBus: this.eventBus,
             style: this.options.style,
+            historyManager: this.editor.history,
+            pluginName: this.name,
         });
 
         this.regionManager = new RegionManager({
@@ -48,6 +50,8 @@ export class MarkerPlugin extends BasePlugin {
             metadata: this.editor.metadata,
             eventBus: this.eventBus,
             style: this.options.regionStyle,
+            historyManager: this.editor.history,
+            pluginName: this.name,
         });
 
         this.state = new MarkerPluginState(this.markableCategories, this.editor);
@@ -77,9 +81,16 @@ export class MarkerPlugin extends BasePlugin {
         return this.regionManager.add(target, targetId, startPt, endPt);
     }
 
-    removeMarker = (id: string): void => this.pointManager.remove(id);
+    removeMarker = (id: string): void => {
+        this.pointManager.remove(id);
+    };
+
     removeMarkersByTarget = (targetId: string): void => this.pointManager.removeByTarget(targetId);
-    removeRegion = (id: string): void => this.regionManager.remove(id);
+
+    removeRegion = (id: string): void => {
+        this.regionManager.remove(id);
+    };
+
     removeRegionsByTarget = (targetId: string): void => this.regionManager.removeByTarget(targetId);
     clearMarkers = (): void => this.pointManager.clear();
     clearRegions = (): void => this.regionManager.clear();
@@ -133,6 +144,57 @@ export class MarkerPlugin extends BasePlugin {
         }
     }
 
+    // ─── 历史记录 ─────────────────────────────────────────
+
+    /**
+     * 获取目标对象关联的所有标记数据（用于删除目标时保存）
+     */
+    getMarkersForTarget(targetId: string): { points: PointData[]; regions: RegionData[] } {
+        return {
+            points: this.pointManager.rawData.filter(p => p.targetId === targetId),
+            regions: this.regionManager.data.filter(r => r.targetId === targetId),
+        };
+    }
+
+    /**
+     * 记录删除操作（供外部调用，如删除目标对象时）
+     * MarkerPlugin 不直接管理 FabricObject，标记的删除会在 onObjectRemoved 中自动处理
+     */
+    recordDelete(_objects: FabricObject[]): void {
+        // 标记的历史记录由 PointManager 和 RegionManager 各自管理
+    }
+
+    /**
+     * 应用撤销 - 委托给对应的 Manager
+     */
+    applyUndo(record: HistoryRecord): void {
+        // 根据快照中的 type 判断是 point 还是 region
+        const snapshotData = record.before?.[0]?.data ?? record.after?.[0]?.data;
+        if (!snapshotData) return;
+
+        const type = (snapshotData as any).type;
+        if (type === "point") {
+            this.pointManager.applyUndo(record);
+        } else if (type === "region") {
+            this.regionManager.applyUndo(record);
+        }
+    }
+
+    /**
+     * 应用重做 - 委托给对应的 Manager
+     */
+    applyRedo(record: HistoryRecord): void {
+        const snapshotData = record.before?.[0]?.data ?? record.after?.[0]?.data;
+        if (!snapshotData) return;
+
+        const type = (snapshotData as any).type;
+        if (type === "point") {
+            this.pointManager.applyRedo(record);
+        } else if (type === "region") {
+            this.regionManager.applyRedo(record);
+        }
+    }
+
     // ─── 私有方法 ─────────────────────────────────────────
 
     private bindEvents(): void {
@@ -148,6 +210,10 @@ export class MarkerPlugin extends BasePlugin {
         this.eventBus.on("zoom:change", this.syncAll);
         this.eventBus.on("layer:change", this.bringAllToFront);
         this.eventBus.on("mode:change", this.onModeChange);
+
+        // 撤销/重做后同步标记位置
+        this.eventBus.on("history:undo:after", this.syncAll);
+        this.eventBus.on("history:redo:after", this.syncAll);
 
         this.state.on("rangeAble:change", (rangeAble) => {
             console.log("[rangeAble:change] " + rangeAble);
@@ -273,6 +339,8 @@ export class MarkerPlugin extends BasePlugin {
         this.eventBus.off("zoom:change", this.syncAll);
         this.eventBus.off("layer:change", this.bringAllToFront);
         this.eventBus.off("mode:change", this.onModeChange);
+        this.eventBus.off("history:undo:after", this.syncAll);
+        this.eventBus.off("history:redo:after", this.syncAll);
 
         this.pointManager.destroy();
         this.regionManager.destroy();

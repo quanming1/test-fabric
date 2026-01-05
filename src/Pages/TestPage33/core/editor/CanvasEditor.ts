@@ -4,6 +4,7 @@ import type { EditorOptions } from "../types";
 import type { Plugin } from "../../plugins";
 import { ObjectMetadata } from "../object/ObjectMetadata";
 import { HotkeyManager } from "../hotkey/HotkeyManager";
+import { HistoryManager, type HistoryOptions, type HistoryRecord } from "../history";
 
 /**
  * 核心编辑器类
@@ -14,10 +15,11 @@ export class CanvasEditor {
     eventBus = new EventBus();
     metadata: ObjectMetadata;
     hotkey: HotkeyManager;
+    history: HistoryManager;
     private plugins = new Map<string, Plugin>();
     private _destroyed = false;
 
-    constructor(el: HTMLCanvasElement, options?: EditorOptions) {
+    constructor(el: HTMLCanvasElement, options?: EditorOptions & { history?: HistoryOptions }) {
         this.canvas = new Canvas(el, {
             preserveObjectStacking: true,
             stopContextMenu: true,
@@ -26,7 +28,35 @@ export class CanvasEditor {
         });
         this.metadata = new ObjectMetadata(this.canvas);
         this.hotkey = new HotkeyManager();
+        this.history = new HistoryManager(options?.history);
+
+        // 初始化 HistoryManager 依赖
+        this.history.init({
+            hotkey: this.hotkey,
+            eventBus: this.eventBus,
+            applyRecord: this.applyHistoryRecord,
+            canvas: this.canvas,
+        });
     }
+
+    /**
+     * 应用历史记录到对应插件
+     */
+    private applyHistoryRecord = (record: HistoryRecord, _action: "undo" | "redo"): void => {
+        const plugin = this.plugins.get(record.pluginName);
+        if (!plugin) {
+            console.warn(`[History] Plugin "${record.pluginName}" not found`);
+            return;
+        }
+
+        if (_action === "undo" && typeof (plugin as any).applyUndo === "function") {
+            (plugin as any).applyUndo(record);
+        } else if (_action === "redo" && typeof (plugin as any).applyRedo === "function") {
+            (plugin as any).applyRedo(record);
+        }
+
+        this.canvas.requestRenderAll();
+    };
 
     /** 注册插件（链式调用） */
     use(plugin: Plugin): this {
@@ -83,6 +113,7 @@ export class CanvasEditor {
         this.plugins.clear();
         this.eventBus.clear();
         this.hotkey.destroy();
+        this.history.destroy();
         this.canvas.dispose();
     }
 

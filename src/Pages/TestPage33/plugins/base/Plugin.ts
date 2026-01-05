@@ -1,4 +1,5 @@
 import { CanvasEditor } from "../../core";
+import type { HistoryRecord } from "../../core";
 
 /**
  * 插件接口
@@ -30,6 +31,14 @@ export interface Plugin {
 
   /** 清空插件数据 */
   clearAll?(): void;
+
+  // ─── 可选：历史记录支持 ─────────────────────────────────
+
+  /** 应用撤销操作，子类实现 */
+  applyUndo?(record: HistoryRecord): void;
+
+  /** 应用重做操作，子类实现 */
+  applyRedo?(record: HistoryRecord): void;
 }
 
 /**
@@ -82,4 +91,14 @@ export abstract class BasePlugin implements Plugin {
   protected get eventBus() {
     return this.editor.eventBus;
   }
+
+  /**
+   * 应用撤销操作，子类可重写
+   */
+  applyUndo?(record: HistoryRecord): void;
+
+  /**
+   * 应用重做操作，子类可重写
+   */
+  applyRedo?(record: HistoryRecord): void;
 }

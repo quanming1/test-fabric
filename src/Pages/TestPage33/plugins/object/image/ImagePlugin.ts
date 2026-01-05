@@ -1,7 +1,8 @@
 import { FabricImage, type FabricObject, type TOptions, type ImageProps } from "fabric";
 import { BasePlugin } from "../../base/Plugin";
-import { Category, genId } from "../../../core";
+import { Category, genId, type HistoryRecord } from "../../../core";
 import { EditorMode } from "../../mode/ModePlugin";
+import { ImageHistoryHandler } from "./ImageHistoryHandler";
 
 /** 图片需要额外序列化的属性 */
 const EXTRA_PROPS = ["data", "src", "crossOrigin"] as const;
@@ -16,9 +17,20 @@ export class ImagePlugin extends BasePlugin {
     override serializable = true;
     override importOrder = 5;
 
+    private historyHandler!: ImageHistoryHandler;
+
     protected onInstall(): void {
+        this.historyHandler = new ImageHistoryHandler({
+            editor: this.editor,
+            historyManager: this.editor.history,
+            pluginName: this.name,
+            getImageList: () => this.imageList,
+        });
+
         this.canvas.on("object:added", this.onObjectAdded);
+        this.canvas.on("object:modified", this.onObjectModified);
         this.eventBus.on("mode:change", this.onModeChange);
+        this.eventBus.on("object:dragStart", this.onDragStart);
     }
 
     /** 各模式下图片的交互配置 */
@@ -29,9 +41,58 @@ export class ImagePlugin extends BasePlugin {
         [EditorMode.RangeSelect]: { selectable: false, evented: true },
     };
 
+    // ─── 历史记录事件 ─────────────────────────────────────────
+
+    private onDragStart = (objects: FabricObject[]): void => {
+        this.historyHandler.onDragStart(objects);
+    };
+
+    private onObjectModified = (opt: any): void => {
+        const target = opt.target as FabricObject;
+        if (!target) return;
+
+        const objects = target.type === "activeselection"
+            ? (target as any).getObjects() as FabricObject[]
+            : [target];
+
+        this.historyHandler.onObjectModified(objects);
+    };
+
+    applyUndo(record: HistoryRecord): void {
+        this.historyHandler.applyUndo(record);
+    }
+
+    applyRedo(record: HistoryRecord): void {
+        this.historyHandler.applyRedo(record);
+    }
+
     /**
-     * 模式变化时更新图片的可选状态
+     * 记录删除操作（供外部调用）
      */
+    recordDelete(objects: FabricObject[]): void {
+        const images = objects.filter((obj) =>
+            this.editor.metadata.is(obj, "category", Category.Image)
+        );
+        if (images.length === 0) return;
+
+        const objectIds: string[] = [];
+        const beforeSnapshots = [];
+
+        for (const obj of images) {
+            const id = this.editor.metadata.get(obj)?.id;
+            if (id) {
+                objectIds.push(id);
+                beforeSnapshots.push(this.historyHandler.createSnapshot(obj, true));
+            }
+        }
+
+        if (objectIds.length > 0) {
+            this.historyHandler.recordRemove(objectIds, beforeSnapshots);
+        }
+    }
+
+    // ─── 模式切换 ─────────────────────────────────────────
+
     private onModeChange = ({ mode }: { mode: EditorMode }): void => {
         const config = ImagePlugin.MODE_CONFIG[mode];
         if (!config) {
@@ -45,9 +106,6 @@ export class ImagePlugin extends BasePlugin {
         });
     };
 
-    /**
-     * 新图片添加时设置可选状态
-     */
     private onObjectAdded = (opt: any): void => {
         const obj = opt.target;
         if (!obj) return;
@@ -62,9 +120,8 @@ export class ImagePlugin extends BasePlugin {
         obj.evented = config.evented;
     };
 
-    /**
-     * 通过文件上传图片
-     */
+    // ─── 公开 API ─────────────────────────────────────────
+
     async addImageFromFile(file: File): Promise<FabricImage | null> {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -82,14 +139,10 @@ export class ImagePlugin extends BasePlugin {
         });
     }
 
-    /**
-     * 通过 URL 添加图片
-     */
     async addImageFromUrl(url: string): Promise<FabricImage | null> {
         try {
             const img = await FabricImage.fromURL(url, { crossOrigin: "anonymous" });
 
-            // 计算合适的初始尺寸（不超过画布的 80%）
             const canvasWidth = this.canvas.width || 800;
             const canvasHeight = this.canvas.height || 600;
             const maxWidth = canvasWidth * 0.8;
@@ -99,14 +152,12 @@ export class ImagePlugin extends BasePlugin {
             const imgHeight = img.height || 100;
             const scale = Math.min(maxWidth / imgWidth, maxHeight / imgHeight, 1);
 
-            // 居中放置
             const vpt = this.canvas.viewportTransform;
             const zoom = this.canvas.getZoom();
             let centerX = canvasWidth / 2;
             let centerY = canvasHeight / 2;
 
             if (vpt) {
-                // 考虑视口变换，计算场景中心
                 centerX = (centerX - vpt[4]) / zoom;
                 centerY = (centerY - vpt[5]) / zoom;
             }
@@ -122,20 +173,19 @@ export class ImagePlugin extends BasePlugin {
                 evented: true,
             });
 
-            // 标记元数据
-            this.editor.metadata.set(img, {
-                category: Category.Image,
-                id: genId("img"),
-            });
+            const id = genId("img");
+            this.editor.metadata.set(img, { category: Category.Image, id });
 
             this.canvas.add(img);
-            // 只有在选择模式下才自动选中图片
+
+            // 记录添加操作
+            const snapshot = this.historyHandler.createSnapshot(img);
+            this.historyHandler.recordAdd([id], [snapshot]);
+
             const modePlugin = this.editor.getPlugin<any>("mode");
             if (modePlugin?.mode === EditorMode.Select) {
                 this.canvas.setActiveObject(img);
             }
-            // // 图片被添加之后，自动切换到选择模式
-            // this.editor.getPlugin<ModePlugin>("mode")?.setMode(EditorMode.Select);
             this.canvas.requestRenderAll();
 
             this.eventBus.emit("image:added", img);
@@ -146,25 +196,23 @@ export class ImagePlugin extends BasePlugin {
         }
     }
 
-
     protected onDestroy(): void {
         this.canvas.off("object:added", this.onObjectAdded);
+        this.canvas.off("object:modified", this.onObjectModified);
         this.eventBus.off("mode:change", this.onModeChange);
+        this.eventBus.off("object:dragStart", this.onDragStart);
     }
 
     // ─── 序列化 ─────────────────────────────────────────
 
-    /** 获取所有图片对象 */
     private get imageList(): FabricObject[] {
         return this.editor.metadata.filter("category", Category.Image);
     }
 
-    /** 导出所有图片数据 */
     exportData(): object[] {
         return this.imageList.map((obj) => obj.toObject([...EXTRA_PROPS]));
     }
 
-    /** 导入图片数据 */
     async importData(data: object[]): Promise<void> {
         if (!Array.isArray(data)) return;
 
@@ -179,7 +227,6 @@ export class ImagePlugin extends BasePlugin {
         this.canvas.requestRenderAll();
     }
 
-    /** 清空所有图片 */
     clearAll(): void {
         this.imageList.forEach((obj) => this.canvas.remove(obj));
         this.canvas.requestRenderAll();

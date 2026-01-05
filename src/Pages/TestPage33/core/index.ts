@@ -9,6 +9,16 @@ export { ObjectMetadata } from "./object/ObjectMetadata";
 export { Category } from "./object/types";
 export type { ObjectData } from "./object/types";
 
+// History
+export { HistoryManager } from "./history";
+export type {
+    HistoryOptions,
+    HistoryRecord,
+    HistoryActionType,
+    ObjectSnapshot,
+    HistoryEvents,
+} from "./history";
+
 // Utils
 export { CoordinateHelper, type ScreenPoint } from "./utils/coordinateUtils";
 export { genId } from "./utils/genId";
