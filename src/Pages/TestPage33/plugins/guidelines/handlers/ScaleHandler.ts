@@ -1,25 +1,21 @@
-import { ActiveSelection, type FabricObject, type Transform } from "fabric";
+import type { FabricObject, Transform } from "fabric";
 import type { Guideline, SnapResult } from "../types";
-import { BaseHandler } from "./BaseHandler";
-import { BoundsCalculator } from "../utils";
+import { BaseHandler, type Corners } from "./BaseHandler";
 
 /**
  * 缩放吸附处理器
  *
  * 职责：处理对象缩放时的吸附逻辑
  * - 根据缩放控制点位置，检测对应边缘与参照物的对齐关系
- * - 计算最近的吸附点并应用尺寸修正
+ * - 通过四角坐标系统应用吸附，确保对角固定
  */
 export class ScaleHandler extends BaseHandler {
     /**
      * 计算缩放时的吸附结果
-     *
-     * @param target 正在缩放的目标对象
-     * @param transform 当前变换信息
-     * @returns 吸附结果
      */
     calculateSnap(target: FabricObject, transform: Transform): SnapResult {
-        const targetBounds = BoundsCalculator.getBounds(target);
+        const currentCorners = this.getCorners(target);
+        const targetBounds = this.cornersToBounds(currentCorners);
         const threshold = this.getThreshold();
         const references = this.collectReferenceBounds(target);
         const corner = transform.corner;
@@ -83,112 +79,112 @@ export class ScaleHandler extends BaseHandler {
 
     /**
      * 应用缩放吸附
+     * 通过四角坐标系统，确保对角固定
      */
     applySnap(target: FabricObject, result: SnapResult, transform: Transform): void {
         const corner = transform.corner;
         const jitterThreshold = this.getJitterThreshold();
+        const currentCorners = this.getCorners(target);
+        // 计算新的四角坐标
+        const newCorners = this.calculateNewCorners(
+            currentCorners,
+            corner,
+            result.deltaX,
+            result.deltaY,
+            jitterThreshold
+        );
 
-        // 多选情况：通过调整整体 scale 来实现吸附
-        if (target instanceof ActiveSelection) {
-            this.applySnapForActiveSelection(target, result, corner, jitterThreshold);
-        } else {
-            // 单选情况：直接调整位置和 scale
-            if (result.deltaX !== 0) {
-                this.applyHorizontalSnap(target, result.deltaX, corner, jitterThreshold);
-            }
-
-            if (result.deltaY !== 0) {
-                this.applyVerticalSnap(target, result.deltaY, corner, jitterThreshold);
-            }
-        }
+        // 应用新的四角坐标
+        this.applyCorners(target, newCorners);
 
         target.setCoords();
     }
 
+
     /**
-     * 多选情况下应用吸附
-     * 通过调整 ActiveSelection 的 scale 来实现，保持子对象相对位置不变
+     * 根据拖动的控制点和偏移量计算新的四角坐标
+     * 规则：对角固定，其他角根据偏移量调整
+     *
+     * 控制点与固定角的对应关系：
+     * - tl (左上角): 对角 br 固定
+     * - tr (右上角): 对角 bl 固定
+     * - bl (左下角): 对角 tr 固定
+     * - br (右下角): 对角 tl 固定
+     * - ml (左中): 右边固定
+     * - mr (右中): 左边固定
+     * - mt (上中): 下边固定
+     * - mb (下中): 上边固定
      */
-    private applySnapForActiveSelection(
-        target: ActiveSelection,
-        result: SnapResult,
+    private calculateNewCorners(
+        current: Corners,
         corner: string,
+        deltaX: number,
+        deltaY: number,
         jitterThreshold: number
-    ): void {
-        const bounds = BoundsCalculator.getBounds(target);
-        const scaleX = target.scaleX ?? 1;
-        const scaleY = target.scaleY ?? 1;
-        const baseWidth = (bounds.right - bounds.left) / scaleX;
-        const baseHeight = (bounds.bottom - bounds.top) / scaleY;
+    ): Corners {
+        const newCorners: Corners = {
+            tl: { ...current.tl },
+            tr: { ...current.tr },
+            bl: { ...current.bl },
+            br: { ...current.br },
+        };
 
-        // 水平方向吸附
-        if (result.deltaX !== 0) {
-            if (corner.includes("l")) {
-                // 拖动左边：计算新的左边位置，调整 scaleX
-                let newLeft = bounds.left + result.deltaX;
-                if (this.lastSnapX !== null && Math.abs(newLeft - this.lastSnapX) < jitterThreshold) {
-                    newLeft = this.lastSnapX;
-                } else {
-                    this.lastSnapX = newLeft;
-                }
-                const newWidth = bounds.right - newLeft;
-                const newScaleX = newWidth / baseWidth;
-                // 计算新的 left（ActiveSelection 的 left 是中心点偏移）
-                const centerX = newLeft + newWidth / 2;
-                const currentCenterX = (bounds.left + bounds.right) / 2;
-                const leftOffset = (target.left ?? 0) + (centerX - currentCenterX);
-                target.set({ left: leftOffset, scaleX: newScaleX });
-            } else if (corner.includes("r")) {
-                // 拖动右边：计算新的右边位置，调整 scaleX
-                let newRight = bounds.right + result.deltaX;
-                if (this.lastSnapX !== null && Math.abs(newRight - this.lastSnapX) < jitterThreshold) {
-                    newRight = this.lastSnapX;
-                } else {
-                    this.lastSnapX = newRight;
-                }
-                const newWidth = newRight - bounds.left;
-                const newScaleX = newWidth / baseWidth;
-                const centerX = bounds.left + newWidth / 2;
-                const currentCenterX = (bounds.left + bounds.right) / 2;
-                const leftOffset = (target.left ?? 0) + (centerX - currentCenterX);
-                target.set({ left: leftOffset, scaleX: newScaleX });
+        // 应用防抖
+        let finalDeltaX = deltaX;
+        let finalDeltaY = deltaY;
+
+        if (deltaX !== 0) {
+            const movingX = corner.includes("l") ? current.tl.x + deltaX : current.tr.x + deltaX;
+            if (this.lastSnapX !== null && Math.abs(movingX - this.lastSnapX) < jitterThreshold) {
+                finalDeltaX = this.lastSnapX - (corner.includes("l") ? current.tl.x : current.tr.x);
+            } else {
+                this.lastSnapX = movingX;
             }
         }
 
-        // 垂直方向吸附
-        if (result.deltaY !== 0) {
-            if (corner.includes("t")) {
-                // 拖动上边：计算新的上边位置，调整 scaleY
-                let newTop = bounds.top + result.deltaY;
-                if (this.lastSnapY !== null && Math.abs(newTop - this.lastSnapY) < jitterThreshold) {
-                    newTop = this.lastSnapY;
-                } else {
-                    this.lastSnapY = newTop;
-                }
-                const newHeight = bounds.bottom - newTop;
-                const newScaleY = newHeight / baseHeight;
-                const centerY = newTop + newHeight / 2;
-                const currentCenterY = (bounds.top + bounds.bottom) / 2;
-                const topOffset = (target.top ?? 0) + (centerY - currentCenterY);
-                target.set({ top: topOffset, scaleY: newScaleY });
-            } else if (corner.includes("b")) {
-                // 拖动下边：计算新的下边位置，调整 scaleY
-                let newBottom = bounds.bottom + result.deltaY;
-                if (this.lastSnapY !== null && Math.abs(newBottom - this.lastSnapY) < jitterThreshold) {
-                    newBottom = this.lastSnapY;
-                } else {
-                    this.lastSnapY = newBottom;
-                }
-                const newHeight = newBottom - bounds.top;
-                const newScaleY = newHeight / baseHeight;
-                const centerY = bounds.top + newHeight / 2;
-                const currentCenterY = (bounds.top + bounds.bottom) / 2;
-                const topOffset = (target.top ?? 0) + (centerY - currentCenterY);
-                target.set({ top: topOffset, scaleY: newScaleY });
+        if (deltaY !== 0) {
+            const movingY = corner.includes("t") ? current.tl.y + deltaY : current.bl.y + deltaY;
+            if (this.lastSnapY !== null && Math.abs(movingY - this.lastSnapY) < jitterThreshold) {
+                finalDeltaY = this.lastSnapY - (corner.includes("t") ? current.tl.y : current.bl.y);
+            } else {
+                this.lastSnapY = movingY;
             }
         }
+
+        // 根据控制点调整对应的角
+        if (corner.includes("l")) {
+            newCorners.tl.x += finalDeltaX;
+            newCorners.bl.x += finalDeltaX;
+        }
+        if (corner.includes("r")) {
+            newCorners.tr.x += finalDeltaX;
+            newCorners.br.x += finalDeltaX;
+        }
+        if (corner.includes("t")) {
+            newCorners.tl.y += finalDeltaY;
+            newCorners.tr.y += finalDeltaY;
+        }
+        if (corner.includes("b")) {
+            newCorners.bl.y += finalDeltaY;
+            newCorners.br.y += finalDeltaY;
+        }
+
+        return newCorners;
     }
 
+    /**
+     * 将四角坐标转换为边界信息
+     */
+    private cornersToBounds(corners: Corners) {
+        return {
+            left: corners.tl.x,
+            right: corners.tr.x,
+            top: corners.tl.y,
+            bottom: corners.bl.y,
+            centerX: (corners.tl.x + corners.tr.x) / 2,
+            centerY: (corners.tl.y + corners.bl.y) / 2,
+        };
+    }
 
     /**
      * 水平方向吸附检测（仅检测正在拖动的边）
@@ -256,99 +252,5 @@ export class ScaleHandler extends BaseHandler {
         }
 
         return snaps;
-    }
-
-    /**
-     * 应用水平方向吸附
-     */
-    private applyHorizontalSnap(
-        target: FabricObject,
-        deltaX: number,
-        corner: string,
-        jitterThreshold: number
-    ): void {
-        const width = target.getScaledWidth();
-        const scaleX = target.scaleX ?? 1;
-        const baseWidth = width / scaleX;
-
-        if (corner.includes("l")) {
-            // 拖动左边：左边移动，右边固定
-            const currentLeft = target.left ?? 0;
-            let newLeft = currentLeft + deltaX;
-
-            if (this.lastSnapX !== null && Math.abs(newLeft - this.lastSnapX) < jitterThreshold) {
-                newLeft = this.lastSnapX;
-            } else {
-                this.lastSnapX = newLeft;
-            }
-
-            const rightEdge = currentLeft + width;
-            const newWidth = rightEdge - newLeft;
-            const newScaleX = newWidth / baseWidth;
-
-            target.set({ left: newLeft, scaleX: newScaleX });
-        } else if (corner.includes("r")) {
-            // 拖动右边：右边移动，左边固定
-            const currentRight = (target.left ?? 0) + width;
-            let newRight = currentRight + deltaX;
-
-            if (this.lastSnapX !== null && Math.abs(newRight - this.lastSnapX) < jitterThreshold) {
-                newRight = this.lastSnapX;
-            } else {
-                this.lastSnapX = newRight;
-            }
-
-            const newWidth = newRight - (target.left ?? 0);
-            const newScaleX = newWidth / baseWidth;
-
-            target.set({ scaleX: newScaleX });
-        }
-    }
-
-    /**
-     * 应用垂直方向吸附
-     */
-    private applyVerticalSnap(
-        target: FabricObject,
-        deltaY: number,
-        corner: string,
-        jitterThreshold: number
-    ): void {
-        const height = target.getScaledHeight();
-        const scaleY = target.scaleY ?? 1;
-        const baseHeight = height / scaleY;
-
-        if (corner.includes("t")) {
-            // 拖动上边：上边移动，下边固定
-            const currentTop = target.top ?? 0;
-            let newTop = currentTop + deltaY;
-
-            if (this.lastSnapY !== null && Math.abs(newTop - this.lastSnapY) < jitterThreshold) {
-                newTop = this.lastSnapY;
-            } else {
-                this.lastSnapY = newTop;
-            }
-
-            const bottomEdge = currentTop + height;
-            const newHeight = bottomEdge - newTop;
-            const newScaleY = newHeight / baseHeight;
-
-            target.set({ top: newTop, scaleY: newScaleY });
-        } else if (corner.includes("b")) {
-            // 拖动下边：下边移动，上边固定
-            const currentBottom = (target.top ?? 0) + height;
-            let newBottom = currentBottom + deltaY;
-
-            if (this.lastSnapY !== null && Math.abs(newBottom - this.lastSnapY) < jitterThreshold) {
-                newBottom = this.lastSnapY;
-            } else {
-                this.lastSnapY = newBottom;
-            }
-
-            const newHeight = newBottom - (target.top ?? 0);
-            const newScaleY = newHeight / baseHeight;
-
-            target.set({ scaleY: newScaleY });
-        }
     }
 }
