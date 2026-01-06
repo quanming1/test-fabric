@@ -1,4 +1,4 @@
-import type { HistoryManager, HistoryRecord, ObjectSnapshot } from "../../../../core";
+import { BaseHistoryHandler, type HistoryManager, type HistoryRecord, type ObjectSnapshot } from "../../../../core";
 import type { RegionData } from "../types";
 
 export interface RegionHistoryHandlerOptions {
@@ -11,21 +11,14 @@ export interface RegionHistoryHandlerOptions {
 /**
  * 区域标记历史记录处理器
  */
-export class RegionHistoryHandler {
-    private historyManager: HistoryManager;
-    private pluginName: string;
+export class RegionHistoryHandler extends BaseHistoryHandler<RegionData> {
     private addRegion: (region: RegionData) => void;
     private removeRegion: (id: string) => void;
 
     constructor(options: RegionHistoryHandlerOptions) {
-        this.historyManager = options.historyManager;
-        this.pluginName = options.pluginName;
+        super(options.historyManager, options.pluginName);
         this.addRegion = options.addRegion;
         this.removeRegion = options.removeRegion;
-    }
-
-    get isPaused(): boolean {
-        return this.historyManager.isPaused;
     }
 
     // ─── 快照 ─────────────────────────────────────────
@@ -37,26 +30,14 @@ export class RegionHistoryHandler {
         };
     }
 
-    // ─── 记录操作 ─────────────────────────────────────────
+    // ─── 记录操作（简化版）─────────────────────────────────
 
-    recordAdd(region: RegionData): void {
-        if (this.isPaused) return;
-        this.historyManager.addRecord({
-            type: "add",
-            pluginName: this.pluginName,
-            objectIds: [region.id],
-            after: [this.createSnapshot(region)],
-        });
+    recordAddRegion(region: RegionData): void {
+        this.recordAdd([region.id], [this.createSnapshot(region)]);
     }
 
-    recordRemove(region: RegionData): void {
-        if (this.isPaused) return;
-        this.historyManager.addRecord({
-            type: "remove",
-            pluginName: this.pluginName,
-            objectIds: [region.id],
-            before: [this.createSnapshot(region)],
-        });
+    recordRemoveRegion(region: RegionData): void {
+        this.recordRemove([region.id], [this.createSnapshot(region)]);
     }
 
     // ─── 撤销/重做 ─────────────────────────────────────────

@@ -131,7 +131,7 @@ export class RegionManager {
         const region: RegionData = { id: genId("region"), targetId, nx, ny, nw, nh };
 
         this.regions.push(region);
-        this.historyHandler.recordAdd(region);
+        this.historyHandler.recordAddRegion(region);
         this.emitChange();
         this.sync();
 
@@ -142,7 +142,7 @@ export class RegionManager {
     remove = (id: string): void => {
         const region = this.regions.find(r => r.id === id);
         if (region) {
-            this.historyHandler.recordRemove(region);
+            this.historyHandler.recordRemoveRegion(region);
         }
         this.removeDirect(id);
     };

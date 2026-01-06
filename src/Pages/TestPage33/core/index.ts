@@ -10,7 +10,7 @@ export { Category } from "./object/types";
 export type { ObjectData } from "./object/types";
 
 // History
-export { HistoryManager } from "./history";
+export { HistoryManager, BaseHistoryHandler } from "./history";
 export type {
     HistoryOptions,
     HistoryRecord,

@@ -1,10 +1,18 @@
 import { FabricImage, type FabricObject, type TOptions, type ImageProps } from "fabric";
-import type { HistoryRecord, ObjectSnapshot, HistoryManager } from "../../../core";
-import type { CanvasEditor } from "../../../core";
-import { Category } from "../../../core";
+import { BaseHistoryHandler, Category, type HistoryRecord, type ObjectSnapshot, type HistoryManager, type CanvasEditor } from "../../../core";
+import type { PointData, RegionData } from "../marker/types";
 
 /** 图片需要额外序列化的属性 */
 const EXTRA_PROPS = ["data", "src", "crossOrigin"] as const;
+
+/** MarkerPlugin 需要的方法接口 */
+interface MarkerPluginApi {
+    getMarkersForTarget(targetId: string): { points: PointData[]; regions: RegionData[] };
+    getPointsData(): PointData[];
+    getRegionsData(): RegionData[];
+    loadPoints(data: PointData[]): void;
+    loadRegions(data: RegionData[]): void;
+}
 
 export interface ImageHistoryHandlerOptions {
     editor: CanvasEditor;
@@ -17,19 +25,16 @@ export interface ImageHistoryHandlerOptions {
  * 图片历史记录处理器
  * 职责：管理图片的历史记录（快照、撤销、重做）
  */
-export class ImageHistoryHandler {
+export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
     private editor: CanvasEditor;
-    private historyManager: HistoryManager;
-    private pluginName: string;
     private getImageList: () => FabricObject[];
 
     /** 变换开始时的快照 */
     private transformStartSnapshots = new Map<string, ObjectSnapshot>();
 
     constructor(options: ImageHistoryHandlerOptions) {
+        super(options.historyManager, options.pluginName);
         this.editor = options.editor;
-        this.historyManager = options.historyManager;
-        this.pluginName = options.pluginName;
         this.getImageList = options.getImageList;
     }
 
@@ -37,21 +42,21 @@ export class ImageHistoryHandler {
         return this.editor.canvas;
     }
 
+    private get markerPlugin(): MarkerPluginApi | null {
+        return (this.editor.getPlugin("marker") as unknown as MarkerPluginApi) ?? null;
+    }
+
     // ─── 快照 ─────────────────────────────────────────
 
-    /**
-     * 创建对象快照
-     */
     createSnapshot(obj: FabricObject, includeMarkers = false): ObjectSnapshot {
         const id = this.editor.metadata.get(obj)?.id ?? "";
         const data: Record<string, unknown> = {
             ...obj.toObject([...EXTRA_PROPS]),
         };
 
-        if (includeMarkers) {
-            const markerPlugin = this.editor.getPlugin<any>("marker");
-            if (markerPlugin && id) {
-                const markerData = markerPlugin.getMarkersForTarget(id);
+        if (includeMarkers && id) {
+            const markerData = this.markerPlugin?.getMarkersForTarget(id);
+            if (markerData) {
                 if (markerData.points.length > 0) {
                     data._markers = markerData.points;
                 }
@@ -66,9 +71,6 @@ export class ImageHistoryHandler {
 
     // ─── 变换记录 ─────────────────────────────────────────
 
-    /**
-     * 变换开始时记录快照
-     */
     onTransformStart(objects: FabricObject[]): void {
         this.transformStartSnapshots.clear();
         for (const obj of objects) {
@@ -80,9 +82,6 @@ export class ImageHistoryHandler {
         }
     }
 
-    /**
-     * 对象修改完成时记录历史
-     */
     onObjectModified(objects: FabricObject[]): void {
         const modifiedImages = objects.filter((obj) =>
             this.editor.metadata.is(obj, "category", Category.Image)
@@ -113,37 +112,50 @@ export class ImageHistoryHandler {
         this.transformStartSnapshots.clear();
     }
 
-    // ─── 记录操作 ─────────────────────────────────────────
+    // ─── 记录操作（便捷方法）─────────────────────────────────
 
-    recordAdd(objectIds: string[], after: ObjectSnapshot[]): void {
-        if (this.historyManager.isPaused) return;
-        this.historyManager.addRecord({
-            type: "add",
-            pluginName: this.pluginName,
-            objectIds,
-            after,
-        });
+    recordClone(objects: FabricObject[]): void {
+        const images = objects.filter((obj) =>
+            this.editor.metadata.is(obj, "category", Category.Image)
+        );
+        if (images.length === 0) return;
+
+        const objectIds: string[] = [];
+        const afterSnapshots: ObjectSnapshot[] = [];
+
+        for (const obj of images) {
+            const id = this.editor.metadata.get(obj)?.id;
+            if (id) {
+                objectIds.push(id);
+                afterSnapshots.push(this.createSnapshot(obj));
+            }
+        }
+
+        if (objectIds.length > 0) {
+            this.recordAdd(objectIds, afterSnapshots);
+        }
     }
 
-    recordRemove(objectIds: string[], before: ObjectSnapshot[]): void {
-        if (this.historyManager.isPaused) return;
-        this.historyManager.addRecord({
-            type: "remove",
-            pluginName: this.pluginName,
-            objectIds,
-            before,
-        });
-    }
+    recordDelete(objects: FabricObject[]): void {
+        const images = objects.filter((obj) =>
+            this.editor.metadata.is(obj, "category", Category.Image)
+        );
+        if (images.length === 0) return;
 
-    recordModify(objectIds: string[], before: ObjectSnapshot[], after: ObjectSnapshot[]): void {
-        if (this.historyManager.isPaused) return;
-        this.historyManager.addRecord({
-            type: "modify",
-            pluginName: this.pluginName,
-            objectIds,
-            before,
-            after,
-        });
+        const objectIds: string[] = [];
+        const beforeSnapshots: ObjectSnapshot[] = [];
+
+        for (const obj of images) {
+            const id = this.editor.metadata.get(obj)?.id;
+            if (id) {
+                objectIds.push(id);
+                beforeSnapshots.push(this.createSnapshot(obj, true));
+            }
+        }
+
+        if (objectIds.length > 0) {
+            this.recordRemove(objectIds, beforeSnapshots);
+        }
     }
 
     // ─── 撤销/重做 ─────────────────────────────────────────
@@ -196,16 +208,15 @@ export class ImageHistoryHandler {
     }
 
     private async restoreObjects(snapshots: ObjectSnapshot[]): Promise<void> {
-        const markerPlugin = this.editor.getPlugin<any>("marker");
-
         for (const snapshot of snapshots) {
             const img = await FabricImage.fromObject(snapshot.data as TOptions<ImageProps>);
             this.canvas.add(img as unknown as FabricObject);
 
             // 恢复关联的标记数据
+            const markerPlugin = this.markerPlugin;
             if (markerPlugin) {
-                const markers = snapshot.data._markers as any[] | undefined;
-                const regions = snapshot.data._regions as any[] | undefined;
+                const markers = snapshot.data._markers as PointData[] | undefined;
+                const regions = snapshot.data._regions as RegionData[] | undefined;
                 if (markers && markers.length > 0) {
                     markerPlugin.loadPoints([
                         ...markerPlugin.getPointsData(),

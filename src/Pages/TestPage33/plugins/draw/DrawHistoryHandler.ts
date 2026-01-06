@@ -1,9 +1,18 @@
 import { Rect, type FabricObject, type TOptions, type RectProps } from "fabric";
-import type { HistoryRecord, ObjectSnapshot, HistoryManager, CanvasEditor } from "../../core";
-import { Category } from "../../core";
+import { BaseHistoryHandler, Category, type HistoryRecord, type ObjectSnapshot, type HistoryManager, type CanvasEditor } from "../../core";
+import type { PointData, RegionData } from "../object/marker/types";
 
 /** DrawRect 需要额外序列化的属性 */
 const EXTRA_PROPS = ["data"] as const;
+
+/** MarkerPlugin 需要的方法接口 */
+interface MarkerPluginApi {
+    getMarkersForTarget(targetId: string): { points: PointData[]; regions: RegionData[] };
+    getPointsData(): PointData[];
+    getRegionsData(): RegionData[];
+    loadPoints(data: PointData[]): void;
+    loadRegions(data: RegionData[]): void;
+}
 
 export interface DrawHistoryHandlerOptions {
     editor: CanvasEditor;
@@ -16,24 +25,25 @@ export interface DrawHistoryHandlerOptions {
  * 绘制历史记录处理器
  * 职责：管理矩形的历史记录（快照、撤销、重做）
  */
-export class DrawHistoryHandler {
+export class DrawHistoryHandler extends BaseHistoryHandler<FabricObject> {
     private editor: CanvasEditor;
-    private historyManager: HistoryManager;
-    private pluginName: string;
     private getDrawRectList: () => FabricObject[];
 
     /** 变换开始时的快照 */
     private transformStartSnapshots = new Map<string, ObjectSnapshot>();
 
     constructor(options: DrawHistoryHandlerOptions) {
+        super(options.historyManager, options.pluginName);
         this.editor = options.editor;
-        this.historyManager = options.historyManager;
-        this.pluginName = options.pluginName;
         this.getDrawRectList = options.getDrawRectList;
     }
 
     private get canvas() {
         return this.editor.canvas;
+    }
+
+    private get markerPlugin(): MarkerPluginApi | null {
+        return (this.editor.getPlugin("marker") as unknown as MarkerPluginApi) ?? null;
     }
 
     // ─── 快照 ─────────────────────────────────────────
@@ -44,10 +54,9 @@ export class DrawHistoryHandler {
             ...obj.toObject([...EXTRA_PROPS]),
         };
 
-        if (includeMarkers) {
-            const markerPlugin = this.editor.getPlugin<any>("marker");
-            if (markerPlugin && id) {
-                const markerData = markerPlugin.getMarkersForTarget(id);
+        if (includeMarkers && id) {
+            const markerData = this.markerPlugin?.getMarkersForTarget(id);
+            if (markerData) {
                 if (markerData.points.length > 0) {
                     data._markers = markerData.points;
                 }
@@ -102,37 +111,50 @@ export class DrawHistoryHandler {
         this.transformStartSnapshots.clear();
     }
 
-    // ─── 记录操作 ─────────────────────────────────────────
+    // ─── 记录操作（便捷方法）─────────────────────────────────
 
-    recordAdd(objectIds: string[], after: ObjectSnapshot[]): void {
-        if (this.historyManager.isPaused) return;
-        this.historyManager.addRecord({
-            type: "add",
-            pluginName: this.pluginName,
-            objectIds,
-            after,
-        });
+    recordClone(objects: FabricObject[]): void {
+        const rects = objects.filter((obj) =>
+            this.editor.metadata.is(obj, "category", Category.DrawRect)
+        );
+        if (rects.length === 0) return;
+
+        const objectIds: string[] = [];
+        const afterSnapshots: ObjectSnapshot[] = [];
+
+        for (const obj of rects) {
+            const id = this.editor.metadata.get(obj)?.id;
+            if (id) {
+                objectIds.push(id);
+                afterSnapshots.push(this.createSnapshot(obj));
+            }
+        }
+
+        if (objectIds.length > 0) {
+            this.recordAdd(objectIds, afterSnapshots);
+        }
     }
 
-    recordRemove(objectIds: string[], before: ObjectSnapshot[]): void {
-        if (this.historyManager.isPaused) return;
-        this.historyManager.addRecord({
-            type: "remove",
-            pluginName: this.pluginName,
-            objectIds,
-            before,
-        });
-    }
+    recordDelete(objects: FabricObject[]): void {
+        const rects = objects.filter((obj) =>
+            this.editor.metadata.is(obj, "category", Category.DrawRect)
+        );
+        if (rects.length === 0) return;
 
-    recordModify(objectIds: string[], before: ObjectSnapshot[], after: ObjectSnapshot[]): void {
-        if (this.historyManager.isPaused) return;
-        this.historyManager.addRecord({
-            type: "modify",
-            pluginName: this.pluginName,
-            objectIds,
-            before,
-            after,
-        });
+        const objectIds: string[] = [];
+        const beforeSnapshots: ObjectSnapshot[] = [];
+
+        for (const obj of rects) {
+            const id = this.editor.metadata.get(obj)?.id;
+            if (id) {
+                objectIds.push(id);
+                beforeSnapshots.push(this.createSnapshot(obj, true));
+            }
+        }
+
+        if (objectIds.length > 0) {
+            this.recordRemove(objectIds, beforeSnapshots);
+        }
     }
 
     // ─── 撤销/重做 ─────────────────────────────────────────
@@ -185,15 +207,14 @@ export class DrawHistoryHandler {
     }
 
     private async restoreObjects(snapshots: ObjectSnapshot[]): Promise<void> {
-        const markerPlugin = this.editor.getPlugin<any>("marker");
-
         for (const snapshot of snapshots) {
             const rect = await Rect.fromObject(snapshot.data as TOptions<RectProps>);
             this.canvas.add(rect as unknown as FabricObject);
 
+            const markerPlugin = this.markerPlugin;
             if (markerPlugin) {
-                const markers = snapshot.data._markers as any[] | undefined;
-                const regions = snapshot.data._regions as any[] | undefined;
+                const markers = snapshot.data._markers as PointData[] | undefined;
+                const regions = snapshot.data._regions as RegionData[] | undefined;
                 if (markers && markers.length > 0) {
                     markerPlugin.loadPoints([
                         ...markerPlugin.getPointsData(),

@@ -136,6 +136,12 @@ export class SelectionPlugin extends BasePlugin {
         clones.push(clone);
       }
 
+      // 记录复制操作的历史
+      const drawPlugin = this.editor.getPlugin<DrawPlugin>("draw");
+      const imagePlugin = this.editor.getPlugin<ImagePlugin>("image");
+      drawPlugin?.recordClone(clones);
+      imagePlugin?.recordClone(clones);
+
       // 多选时创建新的 ActiveSelection，单选时直接选中
       if (clones.length > 1) {
         const selection = new ActiveSelection(clones, { canvas: this.canvas });

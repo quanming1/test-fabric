@@ -70,25 +70,14 @@ export class ImagePlugin extends BasePlugin {
      * 记录删除操作（供外部调用）
      */
     recordDelete(objects: FabricObject[]): void {
-        const images = objects.filter((obj) =>
-            this.editor.metadata.is(obj, "category", Category.Image)
-        );
-        if (images.length === 0) return;
+        this.historyHandler.recordDelete(objects);
+    }
 
-        const objectIds: string[] = [];
-        const beforeSnapshots = [];
-
-        for (const obj of images) {
-            const id = this.editor.metadata.get(obj)?.id;
-            if (id) {
-                objectIds.push(id);
-                beforeSnapshots.push(this.historyHandler.createSnapshot(obj, true));
-            }
-        }
-
-        if (objectIds.length > 0) {
-            this.historyHandler.recordRemove(objectIds, beforeSnapshots);
-        }
+    /**
+     * 记录复制操作（供外部调用）
+     */
+    recordClone(objects: FabricObject[]): void {
+        this.historyHandler.recordClone(objects);
     }
 
     // ─── 模式切换 ─────────────────────────────────────────

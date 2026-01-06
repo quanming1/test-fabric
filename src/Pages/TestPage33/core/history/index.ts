@@ -6,3 +6,6 @@ export type {
     ObjectSnapshot,
     HistoryEvents,
 } from "./types";
+
+// Handlers
+export { BaseHistoryHandler } from "./handlers";

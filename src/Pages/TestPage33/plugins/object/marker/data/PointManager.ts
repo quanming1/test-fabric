@@ -61,7 +61,7 @@ export class PointManager {
         const point: PointData = { id: genId("pt"), targetId, nx, ny };
 
         this.points.push(point);
-        this.historyHandler.recordAdd(point);
+        this.historyHandler.recordAddPoint(point);
         this.emitChange();
         this.sync();
 
@@ -72,7 +72,7 @@ export class PointManager {
     remove = (id: string): void => {
         const point = this.points.find(p => p.id === id);
         if (point) {
-            this.historyHandler.recordRemove(point);
+            this.historyHandler.recordRemovePoint(point);
         }
         this.removeDirect(id);
     };

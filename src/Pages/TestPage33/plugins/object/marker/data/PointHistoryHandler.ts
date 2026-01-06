@@ -1,4 +1,4 @@
-import type { HistoryManager, HistoryRecord, ObjectSnapshot } from "../../../../core";
+import { BaseHistoryHandler, type HistoryManager, type HistoryRecord, type ObjectSnapshot } from "../../../../core";
 import type { PointData } from "../types";
 
 export interface PointHistoryHandlerOptions {
@@ -11,21 +11,14 @@ export interface PointHistoryHandlerOptions {
 /**
  * 点标记历史记录处理器
  */
-export class PointHistoryHandler {
-    private historyManager: HistoryManager;
-    private pluginName: string;
+export class PointHistoryHandler extends BaseHistoryHandler<PointData> {
     private addPoint: (point: PointData) => void;
     private removePoint: (id: string) => void;
 
     constructor(options: PointHistoryHandlerOptions) {
-        this.historyManager = options.historyManager;
-        this.pluginName = options.pluginName;
+        super(options.historyManager, options.pluginName);
         this.addPoint = options.addPoint;
         this.removePoint = options.removePoint;
-    }
-
-    get isPaused(): boolean {
-        return this.historyManager.isPaused;
     }
 
     // ─── 快照 ─────────────────────────────────────────
@@ -37,26 +30,14 @@ export class PointHistoryHandler {
         };
     }
 
-    // ─── 记录操作 ─────────────────────────────────────────
+    // ─── 记录操作（简化版）─────────────────────────────────
 
-    recordAdd(point: PointData): void {
-        if (this.isPaused) return;
-        this.historyManager.addRecord({
-            type: "add",
-            pluginName: this.pluginName,
-            objectIds: [point.id],
-            after: [this.createSnapshot(point)],
-        });
+    recordAddPoint(point: PointData): void {
+        this.recordAdd([point.id], [this.createSnapshot(point)]);
     }
 
-    recordRemove(point: PointData): void {
-        if (this.isPaused) return;
-        this.historyManager.addRecord({
-            type: "remove",
-            pluginName: this.pluginName,
-            objectIds: [point.id],
-            before: [this.createSnapshot(point)],
-        });
+    recordRemovePoint(point: PointData): void {
+        this.recordRemove([point.id], [this.createSnapshot(point)]);
     }
 
     // ─── 撤销/重做 ─────────────────────────────────────────

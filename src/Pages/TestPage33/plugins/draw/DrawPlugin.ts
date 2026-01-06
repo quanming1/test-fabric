@@ -95,25 +95,14 @@ export class DrawPlugin extends BasePlugin {
     }
 
     recordDelete(objects: FabricObject[]): void {
-        const rects = objects.filter((obj) =>
-            this.editor.metadata.is(obj, "category", Category.DrawRect)
-        );
-        if (rects.length === 0) return;
+        this.historyHandler.recordDelete(objects);
+    }
 
-        const objectIds: string[] = [];
-        const beforeSnapshots = [];
-
-        for (const obj of rects) {
-            const id = this.editor.metadata.get(obj)?.id;
-            if (id) {
-                objectIds.push(id);
-                beforeSnapshots.push(this.historyHandler.createSnapshot(obj, true));
-            }
-        }
-
-        if (objectIds.length > 0) {
-            this.historyHandler.recordRemove(objectIds, beforeSnapshots);
-        }
+    /**
+     * 记录复制操作（供外部调用）
+     */
+    recordClone(objects: FabricObject[]): void {
+        this.historyHandler.recordClone(objects);
     }
 
     // ─── 序列化 ─────────────────────────────────────────
