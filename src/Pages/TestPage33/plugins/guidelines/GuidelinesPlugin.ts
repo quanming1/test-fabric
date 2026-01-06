@@ -1,10 +1,10 @@
-import type { FabricObject } from "fabric";
+import type { FabricObject, Transform } from "fabric";
 import { BasePlugin } from "../base/Plugin";
 import { Category } from "../../core";
 import { EditorMode } from "../mode/ModePlugin";
 import type { GuidelinesPluginOptions, GuidelinesStyle } from "./types";
 import { GuidelineRenderer } from "./renderer";
-import { MoveHandler, type HandlerContext } from "./handlers";
+import { MoveHandler, ScaleHandler, type HandlerContext } from "./handlers";
 
 const DEFAULT_STYLE: GuidelinesStyle = {
     color: "#ff00ff",
@@ -30,8 +30,11 @@ export class GuidelinesPlugin extends BasePlugin {
 
     private renderer!: GuidelineRenderer;
     private moveHandler!: MoveHandler;
+    private scaleHandler!: ScaleHandler;
 
     private isMoving = false;
+    private isScaling = false;
+    private currentTransform: Transform | null = null;
 
     constructor(options?: GuidelinesPluginOptions) {
         super();
@@ -53,12 +56,14 @@ export class GuidelinesPlugin extends BasePlugin {
         };
 
         this.moveHandler = new MoveHandler(ctx);
+        this.scaleHandler = new ScaleHandler(ctx);
 
         this.bindEvents();
     }
 
     private bindEvents(): void {
         this.canvas.on("object:moving", this.onObjectMoving);
+        this.canvas.on("object:scaling", this.onObjectScaling);
         this.canvas.on("object:modified", this.onObjectModified);
         this.canvas.on("before:transform", this.onBeforeTransform);
         this.eventBus.on("zoom:change", this.onZoomChange);
@@ -81,10 +86,14 @@ export class GuidelinesPlugin extends BasePlugin {
 
     private onBeforeTransform = (opt: any): void => {
         const action = opt.transform?.action;
+        this.currentTransform = opt.transform;
 
         if (action === "drag") {
             this.isMoving = true;
             this.moveHandler.reset();
+        } else if (action === "scale" || action === "scaleX" || action === "scaleY") {
+            this.isScaling = true;
+            this.scaleHandler.reset();
         }
     };
 
@@ -103,9 +112,27 @@ export class GuidelinesPlugin extends BasePlugin {
         this.renderer.render(result.guidelines);
     };
 
+    private onObjectScaling = (opt: any): void => {
+        if (!this.enabled || !this.isScaling || !this.currentTransform) return;
+
+        const target = opt.target as FabricObject;
+        if (!target) return;
+
+        const result = this.scaleHandler.calculateSnap(target, this.currentTransform);
+
+        if (result.snapped) {
+            this.scaleHandler.applySnap(target, result, this.currentTransform);
+        }
+
+        this.renderer.render(result.guidelines);
+    };
+
     private onObjectModified = (): void => {
         this.isMoving = false;
+        this.isScaling = false;
+        this.currentTransform = null;
         this.moveHandler.reset();
+        this.scaleHandler.reset();
         this.renderer.clear();
     };
 
@@ -122,6 +149,7 @@ export class GuidelinesPlugin extends BasePlugin {
 
     protected onDestroy(): void {
         this.canvas.off("object:moving", this.onObjectMoving);
+        this.canvas.off("object:scaling", this.onObjectScaling);
         this.canvas.off("object:modified", this.onObjectModified);
         this.canvas.off("before:transform", this.onBeforeTransform);
         this.eventBus.off("zoom:change", this.onZoomChange);
