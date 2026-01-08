@@ -1,6 +1,6 @@
 import { type FabricObject, ActiveSelection } from "fabric";
 import { BasePlugin } from "../base/Plugin";
-import { CoordinateHelper } from "../../core";
+import { Category, CoordinateHelper } from "../../core";
 import type { ToolbarPosition } from "../../core/types";
 import type { DrawPlugin } from "../draw/DrawPlugin";
 import type { ImagePlugin } from "../object/image/ImagePlugin";
@@ -120,27 +120,36 @@ export class SelectionPlugin extends BasePlugin {
     if (objects.length === 0) return [];
 
     try {
-      const clones: FabricObject[] = [];
-
-      for (const obj of objects) {
-        const clone = await obj.clone();
-        clone.set({
-          left: (obj.left || 0) + 20,
-          top: (obj.top || 0) + 20,
-        });
-
-        // 克隆元数据并生成新 ID
-        this.editor.metadata.clone(obj, clone);
-
-        this.canvas.add(clone);
-        clones.push(clone);
-      }
-
-      // 记录复制操作的历史
       const drawPlugin = this.editor.getPlugin<DrawPlugin>("draw");
       const imagePlugin = this.editor.getPlugin<ImagePlugin>("image");
-      drawPlugin?.recordClone(clones);
-      imagePlugin?.recordClone(clones);
+      const offset = { x: 20, y: 20 };
+
+      const clones: FabricObject[] = [];
+
+      // 按对象分类分发克隆请求，由各插件内部完成 clone/metadata/历史记录
+      for (const obj of objects) {
+        const meta = this.editor.metadata.get(obj);
+        const id = meta?.id;
+        const category = meta?.category;
+        if (!id || !category) continue;
+
+        switch (category) {
+          case Category.DrawRect: {
+            const c = await drawPlugin?.clone([id], { offset, recordHistory: true });
+            if (c?.length) clones.push(...c);
+            break;
+          }
+          case Category.Image: {
+            const c = await imagePlugin?.clone([id], { offset, recordHistory: true });
+            if (c?.length) clones.push(...c);
+            break;
+          }
+          default:
+            // 未知分类：交给对应插件实现（目前忽略）
+            console.warn("[cloneSelected] 未支持的 category:", category, "id:", id);
+            break;
+        }
+      }
 
       // 多选时创建新的 ActiveSelection，单选时直接选中
       if (clones.length > 1) {
@@ -193,7 +202,7 @@ export class SelectionPlugin extends BasePlugin {
 
     // 获取所有选中对象的 ID
     const ids = objects
-      .map(obj => this.editor.metadata.get(obj)?.id)
+      .map((obj) => this.editor.metadata.get(obj)?.id)
       .filter((id): id is string => id !== undefined);
 
     this.canvas.discardActiveObject();
