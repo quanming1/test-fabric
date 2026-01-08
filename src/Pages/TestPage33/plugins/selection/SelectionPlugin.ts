@@ -9,14 +9,12 @@ import type { MarkerPlugin } from "../object/marker/MarkerPlugin";
 /**
  * 选择插件
  * 功能：对象选择、浮动工具栏定位
- * 事件：selection:change, toolbar:update, object:transformStart
+ * 事件：selection:change, toolbar:update
  */
 export class SelectionPlugin extends BasePlugin {
   readonly name = "selection";
 
   private activeObject: FabricObject | null = null;
-  /** 是否正在变换（拖拽/缩放/旋转） */
-  private isTransforming = false;
 
   /** 当前选中对象（单选或 ActiveSelection） */
   get selected(): FabricObject | null {
@@ -41,11 +39,11 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.on("selection:created", this.onSelectionCreated);
     this.canvas.on("selection:updated", this.onSelectionUpdated);
     this.canvas.on("selection:cleared", this.onSelectionCleared);
-    this.canvas.on("object:moving", this.onTransformStart);
-    this.canvas.on("object:scaling", this.onTransformStart);
-    this.canvas.on("object:rotating", this.onTransformStart);
-    this.canvas.on("object:modified", this.onObjectModified);
-
+    // 变换过程中更新工具栏位置
+    this.canvas.on("object:moving", this.onObjectTransforming);
+    this.canvas.on("object:scaling", this.onObjectTransforming);
+    this.canvas.on("object:rotating", this.onObjectTransforming);
+    this.canvas.on("object:modified", this.onObjectTransformEnd);
     // 监听缩放变化
     this.eventBus.on("zoom:change", this.updateToolbar);
   }
@@ -68,27 +66,13 @@ export class SelectionPlugin extends BasePlugin {
     this.eventBus.emit("toolbar:update", { x: 0, y: 0, visible: false });
   };
 
-  /**
-   * 变换开始时（移动/缩放/旋转）触发事件记录初始状态
-   */
-  private onTransformStart = (): void => {
+  /** 变换过程中（移动/缩放/旋转）更新工具栏 */
+  private onObjectTransforming = (): void => {
     this.updateToolbar();
-
-    // 只在变换开始时触发一次
-    if (!this.isTransforming) {
-      this.isTransforming = true;
-      const objects = this.selectedObjects;
-      if (objects.length > 0) {
-        this.eventBus.emit("object:transformStart", objects);
-      }
-    }
   };
 
-  /**
-   * 对象修改完成时重置变换状态
-   */
-  private onObjectModified = (): void => {
-    this.isTransforming = false;
+  /** 变换结束（modified）后更新工具栏 */
+  private onObjectTransformEnd = (): void => {
     this.updateToolbar();
   };
 
@@ -114,52 +98,72 @@ export class SelectionPlugin extends BasePlugin {
     this.eventBus.emit("toolbar:update", pos);
   };
 
+  /** 将一组对象设置为当前选中（支持多选/单选）；传空数组则不做任何事 */
+  private setSelection(objects: FabricObject[]): void {
+    if (objects.length === 0) return;
+
+    // 清空旧选中，避免 ActiveSelection 混入旧对象
+    this.canvas.discardActiveObject();
+
+    if (objects.length === 1) {
+      this.canvas.setActiveObject(objects[0]);
+      objects[0].setCoords();
+      return;
+    }
+
+    const selection = new ActiveSelection(objects, { canvas: this.canvas });
+    selection.setCoords();
+    this.canvas.setActiveObject(selection);
+  }
+
   /** 复制当前选中对象（支持多选） */
   async cloneSelected(): Promise<FabricObject[]> {
-    const objects = this.selectedObjects;
+    const active = this.canvas.getActiveObject();
+    if (!active) return [];
+
+    // 关键点：ActiveSelection（多选）时，对象的 left/top 是“相对选区坐标”；
+    // 先取出对象列表，再解除 ActiveSelection，让坐标回到画布绝对坐标后再克隆。
+    const isMulti = active instanceof ActiveSelection;
+    const objects = isMulti ? active.getObjects() : [active];
     if (objects.length === 0) return [];
 
+    if (isMulti) {
+      this.canvas.discardActiveObject();
+      objects.forEach((obj) => obj.setCoords());
+    }
+
     try {
-      const drawPlugin = this.editor.getPlugin<DrawPlugin>("draw");
-      const imagePlugin = this.editor.getPlugin<ImagePlugin>("image");
-      const offset = { x: 20, y: 20 };
+      // 关键：多选复制是一种“集体操作”，应该只占用历史栈中的 1 个元素
+      const clones = await this.editor.history.runBatch(async () => {
+        const cloneOptions = { offset: { x: 20, y: 20 }, recordHistory: true };
+        const drawPlugin = this.editor.getPlugin<DrawPlugin>("draw");
+        const imagePlugin = this.editor.getPlugin<ImagePlugin>("image");
 
-      const clones: FabricObject[] = [];
+        // 遍历对象，根据 category 派发到对应插件
+        const clonePromises: Promise<FabricObject[]>[] = [];
+        for (const obj of objects) {
+          const meta = this.editor.metadata.get(obj);
+          if (!meta?.id || !meta?.category) continue;
 
-      // 按对象分类分发克隆请求，由各插件内部完成 clone/metadata/历史记录
-      for (const obj of objects) {
-        const meta = this.editor.metadata.get(obj);
-        const id = meta?.id;
-        const category = meta?.category;
-        if (!id || !category) continue;
-
-        switch (category) {
-          case Category.DrawRect: {
-            const c = await drawPlugin?.clone([id], { offset, recordHistory: true });
-            if (c?.length) clones.push(...c);
-            break;
+          switch (meta.category) {
+            case Category.DrawRect:
+              clonePromises.push(drawPlugin?.clone([meta.id], cloneOptions) ?? Promise.resolve([]));
+              break;
+            case Category.Image:
+              clonePromises.push(
+                imagePlugin?.clone([meta.id], cloneOptions) ?? Promise.resolve([]),
+              );
+              break;
+            default:
+              console.warn("[cloneSelected] 未支持的 category:", meta.category);
           }
-          case Category.Image: {
-            const c = await imagePlugin?.clone([id], { offset, recordHistory: true });
-            if (c?.length) clones.push(...c);
-            break;
-          }
-          default:
-            // 未知分类：交给对应插件实现（目前忽略）
-            console.warn("[cloneSelected] 未支持的 category:", category, "id:", id);
-            break;
         }
-      }
 
-      // 多选时创建新的 ActiveSelection，单选时直接选中
-      if (clones.length > 1) {
-        const selection = new ActiveSelection(clones, { canvas: this.canvas });
-        this.canvas.setActiveObject(selection);
-        this.activeObject = selection;
-      } else if (clones.length === 1) {
-        this.canvas.setActiveObject(clones[0]);
-        this.activeObject = clones[0];
-      }
+        return (await Promise.all(clonePromises)).flat();
+      });
+
+      // 克隆完成后自动选中克隆出来的对象
+      this.setSelection(clones);
 
       this.canvas.requestRenderAll();
       requestAnimationFrame(() => this.updateToolbar());
@@ -226,10 +230,10 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.off("selection:created", this.onSelectionCreated);
     this.canvas.off("selection:updated", this.onSelectionUpdated);
     this.canvas.off("selection:cleared", this.onSelectionCleared);
-    this.canvas.off("object:moving", this.onTransformStart);
-    this.canvas.off("object:scaling", this.onTransformStart);
-    this.canvas.off("object:rotating", this.onTransformStart);
-    this.canvas.off("object:modified", this.onObjectModified);
+    this.canvas.off("object:moving", this.onObjectTransforming);
+    this.canvas.off("object:scaling", this.onObjectTransforming);
+    this.canvas.off("object:rotating", this.onObjectTransforming);
+    this.canvas.off("object:modified", this.onObjectTransformEnd);
     this.eventBus.off("zoom:change", this.updateToolbar);
   }
 }

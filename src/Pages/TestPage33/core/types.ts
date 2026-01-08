@@ -32,10 +32,3 @@ export interface EditorEvents {
   "layer:change": () => void;
   resize: (size: { width: number; height: number }) => void;
 }
-
-/** 编辑器配置 */
-export interface EditorOptions {
-  preserveObjectStacking?: boolean;
-  stopContextMenu?: boolean;
-  selection?: boolean;
-}

@@ -55,8 +55,9 @@ export class DrawPlugin extends BasePlugin {
     this.canvas.on("mouse:up", this.onMouseUp);
     this.canvas.on("object:added", this.onObjectAdded);
     this.canvas.on("object:modified", this.onObjectModified);
+    // Fabric 内置：变换开始前（drag/scale/rotate 等）
+    this.canvas.on("before:transform", this.onBeforeTransform);
     this.eventBus.on("mode:change", this.onModeChange);
-    this.eventBus.on("object:transformStart", this.onTransformStart);
   }
 
   protected onDestroy(): void {
@@ -65,13 +66,26 @@ export class DrawPlugin extends BasePlugin {
     this.canvas.off("mouse:up", this.onMouseUp);
     this.canvas.off("object:added", this.onObjectAdded);
     this.canvas.off("object:modified", this.onObjectModified);
+    this.canvas.off("before:transform", this.onBeforeTransform);
     this.eventBus.off("mode:change", this.onModeChange);
-    this.eventBus.off("object:transformStart", this.onTransformStart);
   }
 
   // ─── 历史记录事件 ─────────────────────────────────────────
 
-  private onTransformStart = (objects: FabricObject[]): void => {
+  /**
+   * Fabric: before:transform
+   * - opt.transform.action 常见为 drag/scale/scaleX/scaleY/rotate
+   * - opt.target 可能是单对象或 ActiveSelection
+   */
+  private onBeforeTransform = (opt: any): void => {
+    const target = opt?.target as FabricObject | undefined;
+    if (!target) return;
+
+    const objects =
+      target.type === "activeselection"
+        ? ((target as any).getObjects() as FabricObject[])
+        : [target];
+
     this.historyHandler.onTransformStart(objects);
   };
 

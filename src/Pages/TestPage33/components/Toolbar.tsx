@@ -97,7 +97,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
   const handleClearAll = () => {
     if (!editor) return;
     editor.canvas.getObjects().forEach((obj) => editor.canvas.remove(obj));
-    editor.render();
+    editor.canvas.requestRenderAll();
     editor.getPlugin<MarkerPlugin>("marker")?.clearMarkers();
   };
 

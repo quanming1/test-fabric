@@ -32,5 +32,4 @@ export type {
     ToolbarPosition,
     PointView,
     EditorEvents,
-    EditorOptions,
 } from "./types";
