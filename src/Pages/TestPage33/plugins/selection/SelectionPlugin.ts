@@ -200,7 +200,7 @@ export class SelectionPlugin extends BasePlugin {
   }
 
   /** 删除选中对象（支持多选） */
-  deleteSelected(): void {
+  async deleteSelected(): Promise<void> {
     const objects = this.selectedObjects;
     if (objects.length === 0) return;
 
@@ -216,9 +216,12 @@ export class SelectionPlugin extends BasePlugin {
     const imagePlugin = this.editor.getPlugin<ImagePlugin>("image");
     const markerPlugin = this.editor.getPlugin<MarkerPlugin>("marker");
 
-    drawPlugin?.remove(ids, true);
-    imagePlugin?.remove(ids, true);
-    markerPlugin?.remove(ids, true);
+    // 关键：多选删除是一种“集体操作”，应该只占用历史栈中的 1 个元素
+    await this.editor.history.runBatch(() => {
+      drawPlugin?.remove(ids, true);
+      imagePlugin?.remove(ids, true);
+      markerPlugin?.remove(ids, true);
+    });
 
     this.activeObject = null;
     this.canvas.requestRenderAll();
