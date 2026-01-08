@@ -23,6 +23,9 @@ export type {
 export { CoordinateHelper, type ScreenPoint } from "./utils/coordinateUtils";
 export { genId } from "./utils/genId";
 
+// Render
+export { BaseRenderer } from "./render";
+
 // Types
 export type {
     MarkPoint,

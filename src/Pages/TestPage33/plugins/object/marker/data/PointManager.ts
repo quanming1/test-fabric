@@ -30,7 +30,7 @@ export class PointManager {
             historyManager: options.historyManager,
             pluginName: options.pluginName,
             addPoint: this.addDirect,
-            removePoint: this.removeDirect,
+            removePoint: (id) => this.remove(id, false),
         });
     }
 
@@ -68,17 +68,19 @@ export class PointManager {
         return { id: point.id, rectId: targetId, nx, ny };
     }
 
-    /** 移除标记点 */
-    remove = (id: string): void => {
+    /**
+     * 移除标记点
+     * @param id 标记点 ID
+     * @param recordHistory 是否记录历史
+     */
+    remove = (id: string, recordHistory: boolean): void => {
         const point = this.points.find(p => p.id === id);
-        if (point) {
+        if (!point) return;
+
+        if (recordHistory) {
             this.historyHandler.recordRemovePoint(point);
         }
-        this.removeDirect(id);
-    };
 
-    /** 直接移除（内部使用，撤销/重做时调用） */
-    private removeDirect = (id: string): void => {
         this.points = this.points.filter((p) => p.id !== id);
         this.emitChange();
         this.sync();

@@ -39,6 +39,15 @@ export interface Plugin {
 
   /** 应用重做操作，子类实现 */
   applyRedo?(record: HistoryRecord): void;
+
+  // ─── 可选：删除支持 ─────────────────────────────────
+
+  /**
+   * 删除指定 ID 的对象
+   * @param ids 要删除的对象 ID 列表
+   * @param recordHistory 是否记录历史
+   */
+  remove?(ids: string[], recordHistory: boolean): void;
 }
 
 /**
@@ -101,4 +110,11 @@ export abstract class BasePlugin implements Plugin {
    * 应用重做操作，子类可重写
    */
   applyRedo?(record: HistoryRecord): void;
+
+  /**
+   * 删除指定 ID 的对象，子类可重写
+   * @param ids 要删除的对象 ID 列表
+   * @param recordHistory 是否记录历史
+   */
+  remove?(ids: string[], recordHistory: boolean): void;
 }

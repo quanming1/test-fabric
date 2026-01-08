@@ -94,8 +94,24 @@ export class DrawPlugin extends BasePlugin {
         this.historyHandler.applyRedo(record);
     }
 
-    recordDelete(objects: FabricObject[]): void {
-        this.historyHandler.recordDelete(objects);
+    /**
+     * 删除指定 ID 的对象
+     * @param ids 要删除的对象 ID 列表
+     * @param recordHistory 是否记录历史
+     */
+    remove(ids: string[], recordHistory: boolean): void {
+        const drawRects = ids
+            .map(id => this.editor.metadata.getById(id))
+            .filter((obj): obj is FabricObject =>
+                obj !== undefined && this.editor.metadata.is(obj, "category", Category.DrawRect)
+            );
+        if (drawRects.length === 0) return;
+
+        if (recordHistory) {
+            this.historyHandler.recordDelete(drawRects);
+        }
+
+        drawRects.forEach(obj => this.canvas.remove(obj));
     }
 
     /**

@@ -191,19 +191,21 @@ export class SelectionPlugin extends BasePlugin {
     const objects = this.selectedObjects;
     if (objects.length === 0) return;
 
-    // 在删除前，通知各插件记录历史
+    // 获取所有选中对象的 ID
+    const ids = objects
+      .map(obj => this.editor.metadata.get(obj)?.id)
+      .filter((id): id is string => id !== undefined);
+
+    this.canvas.discardActiveObject();
+
+    // 调用各插件的 remove 方法，由插件内部处理删除和历史记录
     const drawPlugin = this.editor.getPlugin<DrawPlugin>("draw");
     const imagePlugin = this.editor.getPlugin<ImagePlugin>("image");
     const markerPlugin = this.editor.getPlugin<MarkerPlugin>("marker");
 
-    drawPlugin?.recordDelete(objects);
-    imagePlugin?.recordDelete(objects);
-    markerPlugin?.recordDelete(objects);
-
-    this.canvas.discardActiveObject();
-    objects.forEach((obj) => {
-      this.canvas.remove(obj);
-    });
+    drawPlugin?.remove(ids, true);
+    imagePlugin?.remove(ids, true);
+    markerPlugin?.remove(ids, true);
 
     this.activeObject = null;
     this.canvas.requestRenderAll();

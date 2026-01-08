@@ -67,10 +67,23 @@ export class ImagePlugin extends BasePlugin {
     }
 
     /**
-     * 记录删除操作（供外部调用）
+     * 删除指定 ID 的对象
+     * @param ids 要删除的对象 ID 列表
+     * @param recordHistory 是否记录历史
      */
-    recordDelete(objects: FabricObject[]): void {
-        this.historyHandler.recordDelete(objects);
+    remove(ids: string[], recordHistory: boolean): void {
+        const images = ids
+            .map(id => this.editor.metadata.getById(id))
+            .filter((obj): obj is FabricObject =>
+                obj !== undefined && this.editor.metadata.is(obj, "category", Category.Image)
+            );
+        if (images.length === 0) return;
+
+        if (recordHistory) {
+            this.historyHandler.recordDelete(images);
+        }
+
+        images.forEach(obj => this.canvas.remove(obj));
     }
 
     /**

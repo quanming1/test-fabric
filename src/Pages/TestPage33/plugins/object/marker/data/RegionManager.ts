@@ -23,7 +23,6 @@ const DRAG_THRESHOLD = 5;
 export class RegionManager {
     private regions: RegionData[] = [];
     private renderer: RegionRenderer;
-    private canvas: Canvas;
     private eventBus: EventBus;
     private historyHandler: RegionHistoryHandler;
 
@@ -35,14 +34,13 @@ export class RegionManager {
     private drawTargetId: string | null = null;
 
     constructor(options: RegionManagerOptions) {
-        this.canvas = options.canvas;
         this.eventBus = options.eventBus;
         this.renderer = new RegionRenderer(options.canvas, options.metadata, options.style);
         this.historyHandler = new RegionHistoryHandler({
             historyManager: options.historyManager,
             pluginName: options.pluginName,
             addRegion: this.addDirect,
-            removeRegion: this.removeDirect,
+            removeRegion: (id) => this.remove(id, false),
         });
     }
 
@@ -108,7 +106,7 @@ export class RegionManager {
         startPt: { x: number; y: number },
         endPt: { x: number; y: number }
     ): RegionData | null {
-        const w = target.width ?? 0;
+        const w = target.width ?? 0; + w / 2
         const h = target.height ?? 0;
         if (!w || !h) return null;
 
@@ -138,17 +136,19 @@ export class RegionManager {
         return region;
     }
 
-    /** 移除区域 */
-    remove = (id: string): void => {
+    /**
+     * 移除区域
+     * @param id 区域 ID
+     * @param recordHistory 是否记录历史
+     */
+    remove = (id: string, recordHistory: boolean): void => {
         const region = this.regions.find(r => r.id === id);
-        if (region) {
+        if (!region) return;
+
+        if (recordHistory) {
             this.historyHandler.recordRemoveRegion(region);
         }
-        this.removeDirect(id);
-    };
 
-    /** 直接移除（内部使用，撤销/重做时调用） */
-    private removeDirect = (id: string): void => {
         this.regions = this.regions.filter((r) => r.id !== id);
         this.emitChange();
         this.sync();
