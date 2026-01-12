@@ -1,4 +1,4 @@
-import type { FabricObject, Transform } from "fabric";
+import type { FabricObject, Transform, TEvent, TPointerEvent, BasicTransformEvent } from "fabric";
 import { BasePlugin } from "../base/Plugin";
 import { Category } from "../../core";
 import { EditorMode } from "../mode/ModePlugin";
@@ -84,7 +84,7 @@ export class GuidelinesPlugin extends BasePlugin {
         this.renderer.setStyle(style);
     }
 
-    private onBeforeTransform = (opt: any): void => {
+    private onBeforeTransform = (opt: TEvent<TPointerEvent> & { transform: Transform }): void => {
         const action = opt.transform?.action;
         this.currentTransform = opt.transform;
 
@@ -97,10 +97,10 @@ export class GuidelinesPlugin extends BasePlugin {
         }
     };
 
-    private onObjectMoving = (opt: any): void => {
+    private onObjectMoving = (opt: BasicTransformEvent<TPointerEvent> & { target: FabricObject }): void => {
         if (!this.enabled || !this.isMoving) return;
 
-        const target = opt.target as FabricObject;
+        const target = opt.target;
         if (!target) return;
 
         const result = this.moveHandler.calculateSnap(target);
@@ -112,10 +112,10 @@ export class GuidelinesPlugin extends BasePlugin {
         this.renderer.render(result.guidelines);
     };
 
-    private onObjectScaling = (opt: any): void => {
+    private onObjectScaling = (opt: BasicTransformEvent<TPointerEvent> & { target: FabricObject }): void => {
         if (!this.enabled || !this.isScaling || !this.currentTransform) return;
 
-        const target = opt.target as FabricObject;
+        const target = opt.target;
         if (!target) return;
 
         const result = this.scaleHandler.calculateSnap(target, this.currentTransform);

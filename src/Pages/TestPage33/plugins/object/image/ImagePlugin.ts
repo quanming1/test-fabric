@@ -1,4 +1,4 @@
-import { FabricImage, type FabricObject, ActiveSelection } from "fabric";
+import { FabricImage, type FabricObject, ActiveSelection, type TPointerEvent, type Transform, type TEvent, type BasicTransformEvent, type ModifiedEvent } from "fabric";
 import { BasePlugin } from "../../base/Plugin";
 import { Category, type HistoryRecord } from "../../../core";
 import { EditorMode } from "../../mode/ModePlugin";
@@ -98,8 +98,8 @@ export class ImagePlugin extends BasePlugin {
   };
 
   /** 变换过程中 - 实时更新标签位置和尺寸信息 */
-  private onObjectTransform = (opt: any): void => {
-    const target = opt.target as FabricObject;
+  private onObjectTransform = (opt: BasicTransformEvent<TPointerEvent> & { target: FabricObject }): void => {
+    const target = opt.target;
     if (!target) return;
 
     // 获取实际变换的对象（多选时需要从 ActiveSelection 中提取）
@@ -125,24 +125,24 @@ export class ImagePlugin extends BasePlugin {
   // ─── 历史记录事件 ─────────────────────────────────────────
 
   /** 变换开始前 - 保存快照用于历史记录 */
-  private onBeforeTransform = (opt: any): void => {
-    const target = opt?.target as FabricObject | undefined;
+  private onBeforeTransform = (opt: TEvent<TPointerEvent> & { transform: Transform }): void => {
+    const target = opt.transform?.target;
     if (!target) return;
 
     const objects = target.type === "activeselection"
-      ? ((target as any).getObjects() as FabricObject[])
+      ? ((target as ActiveSelection).getObjects() as FabricObject[])
       : [target];
 
     this.manager.onTransformStart(objects);
   };
 
   /** 变换结束 - 记录历史并更新标签 */
-  private onObjectModified = (opt: any): void => {
-    const target = opt.target as FabricObject;
+  private onObjectModified = (opt: ModifiedEvent<TPointerEvent>): void => {
+    const target = opt.target;
     if (!target) return;
 
     const objects = target.type === "activeselection"
-      ? ((target as any).getObjects() as FabricObject[])
+      ? ((target as ActiveSelection).getObjects() as FabricObject[])
       : [target];
 
     // 记录历史
@@ -222,7 +222,7 @@ export class ImagePlugin extends BasePlugin {
   };
 
   /** 新图片添加到画布 - 应用当前模式的交互配置 */
-  private onObjectAdded = (opt: any): void => {
+  private onObjectAdded = (opt: { target: FabricObject }): void => {
     const obj = opt.target;
     if (!obj) return;
 

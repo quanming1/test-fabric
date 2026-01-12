@@ -1,3 +1,4 @@
+import type { TPointerEventInfo } from "fabric";
 import { BasePlugin } from "../base/Plugin";
 
 /**
@@ -21,8 +22,8 @@ export class ZoomPlugin extends BasePlugin {
     this.canvas.on("mouse:wheel", this.onWheel);
   }
 
-  private onWheel = (opt: any): void => {
-    const e = opt.e as WheelEvent;
+  private onWheel = (opt: TPointerEventInfo<WheelEvent>): void => {
+    const e = opt.e;
     e.preventDefault();
     e.stopPropagation();
 

@@ -1,4 +1,4 @@
-import type { FabricObject } from "fabric";
+import type { FabricObject, TPointerEventInfo, TPointerEvent } from "fabric";
 import { BasePlugin } from "../../base/Plugin";
 import { PointManager } from "./data/PointManager";
 import { RegionManager } from "./data/RegionManager";
@@ -327,7 +327,7 @@ export class MarkerPlugin extends BasePlugin {
      * - RangeSelect 模式：开始绘制区域
      * - Select 模式 + Ctrl：添加点标记
      */
-    private onMouseDown = (opt: any): void => {
+    private onMouseDown = (opt: TPointerEventInfo<TPointerEvent>): void => {
         const e = opt.e as MouseEvent;
         const mode = this.getCurrentMode();
 
@@ -339,7 +339,7 @@ export class MarkerPlugin extends BasePlugin {
             const targetId = this.getTargetId(target);
             if (!targetId) return;
 
-            const scenePt = this.canvas.getScenePoint(e as any);
+            const scenePt = this.canvas.getScenePoint(e);
             this.regionManager.startDraw(target, targetId, scenePt);
 
             e.preventDefault();
@@ -356,7 +356,7 @@ export class MarkerPlugin extends BasePlugin {
         const targetId = this.getTargetId(target);
         if (!targetId) return;
 
-        const scenePt = this.canvas.getScenePoint(e as any);
+        const scenePt = this.canvas.getScenePoint(e);
         this.addMarker(target, targetId, scenePt);
 
         e.preventDefault();
@@ -364,9 +364,9 @@ export class MarkerPlugin extends BasePlugin {
     };
 
     /** 鼠标移动：更新区域绘制预览 */
-    private onMouseMove = (opt: any): void => {
+    private onMouseMove = (opt: TPointerEventInfo<TPointerEvent>): void => {
         if (!this.regionManager.drawing) return;
-        const scenePt = this.canvas.getScenePoint(opt.e as any);
+        const scenePt = this.canvas.getScenePoint(opt.e);
         this.regionManager.updateDraw(scenePt);
     };
 
@@ -375,10 +375,10 @@ export class MarkerPlugin extends BasePlugin {
      * - 拖动距离足够：创建区域标记
      * - 点击（无拖动）：创建点标记
      */
-    private onMouseUp = (opt: any): void => {
+    private onMouseUp = (opt: TPointerEventInfo<TPointerEvent>): void => {
         if (!this.regionManager.drawing) return;
 
-        const scenePt = this.canvas.getScenePoint(opt.e as any);
+        const scenePt = this.canvas.getScenePoint(opt.e);
         const drawInfo = this.regionManager.getDrawTarget();
         const isDrag = this.regionManager.endDraw(scenePt);
 

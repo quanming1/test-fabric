@@ -1,3 +1,4 @@
+import type { TPointerEventInfo } from "fabric";
 import { BasePlugin } from "../base/Plugin";
 
 /**
@@ -91,7 +92,7 @@ export class ModePlugin extends BasePlugin {
     }
 
     // ============ 拖拽画布逻辑 ============
-    private onMouseDown = (opt: any): void => {
+    private onMouseDown = (opt: TPointerEventInfo): void => {
         if (this._mode !== EditorMode.Pan) return;
 
         const e = opt.e as MouseEvent;
@@ -101,7 +102,7 @@ export class ModePlugin extends BasePlugin {
         this.canvas.defaultCursor = "grabbing";
     };
 
-    private onMouseMove = (opt: any): void => {
+    private onMouseMove = (opt: TPointerEventInfo): void => {
         if (!this.isPanning || this._mode !== EditorMode.Pan) return;
 
         const e = opt.e as MouseEvent;

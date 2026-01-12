@@ -1,4 +1,4 @@
-import { Rect, type FabricObject, type RectProps } from "fabric";
+import { Rect, type FabricObject, type RectProps, type TEvent, type TPointerEvent, type Transform, ActiveSelection, type BasicTransformEvent, type TPointerEventInfo, type ModifiedEvent } from "fabric";
 import { BasePlugin } from "../base/Plugin";
 import { EditorMode } from "../mode/ModePlugin";
 import { Category, genId, type HistoryRecord } from "../../core";
@@ -75,27 +75,27 @@ export class DrawPlugin extends BasePlugin {
   /**
    * Fabric: before:transform
    * - opt.transform.action 常见为 drag/scale/scaleX/scaleY/rotate
-   * - opt.target 可能是单对象或 ActiveSelection
+   * - opt.transform.target 可能是单对象或 ActiveSelection
    */
-  private onBeforeTransform = (opt: any): void => {
-    const target = opt?.target as FabricObject | undefined;
+  private onBeforeTransform = (opt: TEvent<TPointerEvent> & { transform: Transform }): void => {
+    const target = opt.transform?.target;
     if (!target) return;
 
     const objects =
       target.type === "activeselection"
-        ? ((target as any).getObjects() as FabricObject[])
+        ? ((target as ActiveSelection).getObjects() as FabricObject[])
         : [target];
 
     this.historyHandler.onTransformStart(objects);
   };
 
-  private onObjectModified = (opt: any): void => {
-    const target = opt.target as FabricObject;
+  private onObjectModified = (opt: ModifiedEvent<TPointerEvent>): void => {
+    const target = opt.target;
     if (!target) return;
 
     const objects =
       target.type === "activeselection"
-        ? ((target as any).getObjects() as FabricObject[])
+        ? ((target as ActiveSelection).getObjects() as FabricObject[])
         : [target];
 
     this.historyHandler.onObjectModified(objects);
@@ -221,8 +221,8 @@ export class DrawPlugin extends BasePlugin {
     });
   };
 
-  private onObjectAdded = (opt: any): void => {
-    const obj = opt.target as FabricObject;
+  private onObjectAdded = (opt: { target: FabricObject }): void => {
+    const obj = opt.target;
     if (!obj) return;
 
     const isDrawRect = this.editor.metadata.is(obj, "category", Category.DrawRect);
@@ -239,7 +239,7 @@ export class DrawPlugin extends BasePlugin {
     return modePlugin?.mode ?? null;
   }
 
-  private onMouseDown = (opt: any): void => {
+  private onMouseDown = (opt: TPointerEventInfo<TPointerEvent>): void => {
     const mode = this.getCurrentMode();
     if (mode !== EditorMode.DrawRect) return;
 
@@ -261,7 +261,7 @@ export class DrawPlugin extends BasePlugin {
     this.canvas.add(this.currentRect);
   };
 
-  private onMouseMove = (opt: any): void => {
+  private onMouseMove = (opt: TPointerEventInfo<TPointerEvent>): void => {
     if (!this.isDrawing || !this.currentRect) return;
 
     const pointer = this.canvas.getScenePoint(opt.e);
