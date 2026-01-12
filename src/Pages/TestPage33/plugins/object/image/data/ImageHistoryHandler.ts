@@ -1,9 +1,7 @@
 import { FabricImage, type FabricObject, type TOptions, type ImageProps } from "fabric";
-import { BaseHistoryHandler, Category, type HistoryRecord, type ObjectSnapshot, type HistoryManager, type CanvasEditor } from "../../../core";
-import type { PointData, RegionData } from "../marker/types";
-
-/** 图片需要额外序列化的属性 */
-const EXTRA_PROPS = ["data", "src", "crossOrigin"] as const;
+import { BaseHistoryHandler, Category, type HistoryRecord, type ObjectSnapshot, type HistoryManager, type CanvasEditor } from "../../../../core";
+import type { PointData, RegionData } from "../../marker/types";
+import { EXTRA_PROPS } from "../types";
 
 /** MarkerPlugin 需要的方法接口 */
 interface MarkerPluginApi {

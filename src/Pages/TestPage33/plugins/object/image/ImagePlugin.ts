@@ -1,172 +1,227 @@
-import { FabricImage, type FabricObject, type TOptions, type ImageProps } from "fabric";
+import { FabricImage, type FabricObject, ActiveSelection } from "fabric";
 import { BasePlugin } from "../../base/Plugin";
-import { Category, genId, type HistoryRecord } from "../../../core";
+import { Category, type HistoryRecord } from "../../../core";
 import { EditorMode } from "../../mode/ModePlugin";
-import { ImageHistoryHandler } from "./ImageHistoryHandler";
-
-/** 图片需要额外序列化的属性 */
-const EXTRA_PROPS = ["data", "src", "crossOrigin"] as const;
+import { ImageManager } from "./data/ImageManager";
+import { ImageLabelRenderer } from "./render/ImageLabelRenderer";
 
 /**
  * 图片插件
- * 功能：上传图片到画布
- * 事件：image:added
+ * 
+ * 职责：
+ * - 图片的上传、添加、删除、克隆
+ * - 选中图片时显示浮动标签（文件名 + 尺寸）
+ * - 响应模式切换，调整图片的交互状态
+ * - 集成历史记录，支持撤销/重做
+ * 
+ * 架构：
+ * - ImageManager: 数据管理层，处理图片的增删改查和历史记录
+ * - ImageLabelRenderer: 渲染层，管理选中图片上方的浮动标签
+ * 
+ * 事件：
+ * - image:added: 图片添加完成后触发
  */
 export class ImagePlugin extends BasePlugin {
   readonly name = "image";
   override serializable = true;
-  override importOrder = 5;
+  override importOrder = 5; // 确保在基础对象之后加载
 
-  private historyHandler!: ImageHistoryHandler;
+  /** 数据管理器 - 负责图片的增删改查、历史记录 */
+  private manager!: ImageManager;
+  /** 标签渲染器 - 负责选中图片上方的浮动标签 */
+  private labelRenderer!: ImageLabelRenderer;
 
   protected onInstall(): void {
-    this.historyHandler = new ImageHistoryHandler({
-      editor: this.editor,
-      historyManager: this.editor.history,
-      pluginName: this.name,
-      getImageList: () => this.imageList,
-    });
+    this.manager = new ImageManager({ editor: this.editor });
+    this.labelRenderer = new ImageLabelRenderer(this.canvas, this.editor.metadata);
 
-    this.canvas.on("object:added", this.onObjectAdded);
-    this.canvas.on("object:modified", this.onObjectModified);
-    // Fabric 内置：变换开始前（drag/scale/rotate 等）
-    this.canvas.on("before:transform", this.onBeforeTransform);
-    this.eventBus.on("mode:change", this.onModeChange);
+    this.bindCanvasEvents();
+    this.bindEditorEvents();
   }
 
-  /** 各模式下图片的交互配置 */
-  private static readonly MODE_CONFIG: Record<
-    EditorMode,
-    { selectable: boolean; evented: boolean }
-  > = {
-    [EditorMode.Select]: { selectable: true, evented: true },
-    [EditorMode.Pan]: { selectable: false, evented: false },
-    [EditorMode.DrawRect]: { selectable: false, evented: false },
-    [EditorMode.RangeSelect]: { selectable: false, evented: true },
+  /** 绑定画布事件 */
+  private bindCanvasEvents(): void {
+    // 对象生命周期
+    this.canvas.on("object:added", this.onObjectAdded);
+    this.canvas.on("object:modified", this.onObjectModified);
+    this.canvas.on("before:transform", this.onBeforeTransform);
+
+    // 选中状态变化 - 用于显示/隐藏标签
+    this.canvas.on("selection:created", this.onSelectionChange);
+    this.canvas.on("selection:updated", this.onSelectionChange);
+    this.canvas.on("selection:cleared", this.onSelectionCleared);
+
+    // 变换过程 - 用于实时更新标签位置和尺寸
+    this.canvas.on("object:moving", this.onObjectTransform);
+    this.canvas.on("object:scaling", this.onObjectTransform);
+    this.canvas.on("object:rotating", this.onObjectTransform);
+  }
+
+  /** 绑定编辑器事件 */
+  private bindEditorEvents(): void {
+    // 模式切换 - 调整图片的 selectable/evented 状态
+    this.eventBus.on("mode:change", this.onModeChange);
+    // 缩放变化 - 更新标签位置（保持视觉大小不变）
+    this.eventBus.on("zoom:change", this.onZoomChange);
+  }
+
+  // ─── 标签相关事件 ─────────────────────────────────────────
+
+  /**
+   * 获取当前选中的图片对象列表
+   * 支持单选和多选（ActiveSelection）
+   */
+  private getSelectedImages(): FabricObject[] {
+    const active = this.canvas.getActiveObject();
+    if (!active) return [];
+
+    // 多选时从 ActiveSelection 中提取对象
+    const objects = active instanceof ActiveSelection
+      ? active.getObjects()
+      : [active];
+
+    // 只保留图片类型的对象
+    return objects.filter((obj) =>
+      this.editor.metadata.is(obj, "category", Category.Image)
+    );
+  }
+
+  /** 选中状态变化 - 显示选中图片的标签 */
+  private onSelectionChange = (): void => {
+    const images = this.getSelectedImages();
+    this.labelRenderer.show(images);
+  };
+
+  /** 取消选中 - 隐藏所有标签 */
+  private onSelectionCleared = (): void => {
+    this.labelRenderer.hide();
+  };
+
+  /** 变换过程中 - 实时更新标签位置和尺寸信息 */
+  private onObjectTransform = (opt: any): void => {
+    const target = opt.target as FabricObject;
+    if (!target) return;
+
+    // 获取实际变换的对象（多选时需要从 ActiveSelection 中提取）
+    const objects = target instanceof ActiveSelection
+      ? target.getObjects()
+      : [target];
+
+    const images = objects.filter((obj) =>
+      this.editor.metadata.is(obj, "category", Category.Image)
+    );
+
+    if (images.length > 0) {
+      this.labelRenderer.show(images);
+    }
+  };
+
+  /** 缩放变化 - 更新标签位置 */
+  private onZoomChange = (): void => {
+    const images = this.getSelectedImages();
+    this.labelRenderer.show(images);
   };
 
   // ─── 历史记录事件 ─────────────────────────────────────────
 
-  /**
-   * Fabric: before:transform
-   * - opt.transform.action 常见为 drag/scale/scaleX/scaleY/rotate
-   * - opt.target 可能是单对象或 ActiveSelection
-   */
+  /** 变换开始前 - 保存快照用于历史记录 */
   private onBeforeTransform = (opt: any): void => {
     const target = opt?.target as FabricObject | undefined;
     if (!target) return;
 
-    const objects =
-      target.type === "activeselection"
-        ? ((target as any).getObjects() as FabricObject[])
-        : [target];
+    const objects = target.type === "activeselection"
+      ? ((target as any).getObjects() as FabricObject[])
+      : [target];
 
-    this.historyHandler.onTransformStart(objects);
+    this.manager.onTransformStart(objects);
   };
 
+  /** 变换结束 - 记录历史并更新标签 */
   private onObjectModified = (opt: any): void => {
     const target = opt.target as FabricObject;
     if (!target) return;
 
-    const objects =
-      target.type === "activeselection"
-        ? ((target as any).getObjects() as FabricObject[])
-        : [target];
+    const objects = target.type === "activeselection"
+      ? ((target as any).getObjects() as FabricObject[])
+      : [target];
 
-    this.historyHandler.onObjectModified(objects);
+    // 记录历史
+    this.manager.onObjectModified(objects);
+
+    // 变换结束后更新标签（尺寸可能已变化）
+    const images = objects.filter((obj) =>
+      this.editor.metadata.is(obj, "category", Category.Image)
+    );
+    if (images.length > 0) {
+      this.labelRenderer.show(images);
+    }
   };
 
+  /** 应用撤销 */
   applyUndo(record: HistoryRecord): void {
-    this.historyHandler.applyUndo(record);
+    this.manager.applyUndo(record);
   }
 
+  /** 应用重做 */
   applyRedo(record: HistoryRecord): void {
-    this.historyHandler.applyRedo(record);
+    this.manager.applyRedo(record);
   }
+
+  // ─── 公开 API ─────────────────────────────────────────
 
   /**
-   * 删除指定 ID 的对象
-   * @param ids 要删除的对象 ID 列表
+   * 删除指定 ID 的图片
+   * @param ids 要删除的图片 ID 列表
    * @param recordHistory 是否记录历史
    */
   remove(ids: string[], recordHistory: boolean): void {
-    const images = ids
-      .map((id) => this.editor.metadata.getById(id))
-      .filter(
-        (obj): obj is FabricObject =>
-          obj !== undefined && this.editor.metadata.is(obj, "category", Category.Image),
-      );
-    if (images.length === 0) return;
-
-    if (recordHistory) {
-      this.historyHandler.recordDelete(images);
-    }
-
-    images.forEach((obj) => this.canvas.remove(obj));
+    this.manager.remove(ids, recordHistory);
+    this.labelRenderer.hide();
   }
 
   /**
-   * 记录复制操作（供外部调用）
+   * 记录克隆操作（供外部调用，如 SelectionPlugin）
    */
   recordClone(objects: FabricObject[]): void {
-    this.historyHandler.recordClone(objects);
+    this.manager.recordClone(objects);
   }
 
   /**
-   * 复制指定 ID 的对象（由插件内部处理克隆、元数据、新 ID、历史记录）
+   * 克隆指定 ID 的图片
+   * @param ids 要克隆的图片 ID 列表
+   * @param options 克隆选项（偏移量、是否记录历史）
    */
   async clone(
     ids: string[],
-    options?: { offset?: { x: number; y: number }; recordHistory?: boolean },
+    options?: { offset?: { x: number; y: number }; recordHistory?: boolean }
   ): Promise<FabricObject[]> {
-    const offset = options?.offset ?? { x: 20, y: 20 };
-    const recordHistory = options?.recordHistory ?? true;
+    return this.manager.clone(ids, options);
+  }
 
-    const sources = ids
-      .map((id) => this.editor.metadata.getById(id))
-      .filter(
-        (obj): obj is FabricObject =>
-          obj !== undefined && this.editor.metadata.is(obj, "category", Category.Image),
-      );
-    if (sources.length === 0) return [];
+  /**
+   * 从文件添加图片
+   * @param file 图片文件
+   */
+  async addImageFromFile(file: File): Promise<FabricImage | null> {
+    return this.manager.addFromFile(file);
+  }
 
-    const clones: FabricObject[] = [];
-    for (const src of sources) {
-      const clone = await src.clone();
-      clone.set({
-        left: (src.left || 0) + offset.x,
-        top: (src.top || 0) + offset.y,
-      });
-
-      // 克隆元数据并生成新 ID（保持 Image 的 id 前缀风格）
-      this.editor.metadata.clone(src, clone, genId("img"));
-
-      this.canvas.add(clone);
-      clones.push(clone);
-    }
-
-    if (recordHistory) {
-      this.historyHandler.recordClone(clones);
-    }
-
-    return clones;
+  /**
+   * 从 URL 添加图片
+   * @param url 图片 URL（支持 data URL）
+   */
+  async addImageFromUrl(url: string): Promise<FabricImage | null> {
+    return this.manager.addFromUrl(url);
   }
 
   // ─── 模式切换 ─────────────────────────────────────────
 
+  /** 模式变化 - 更新所有图片的交互状态 */
   private onModeChange = ({ mode }: { mode: EditorMode }): void => {
-    const config = ImagePlugin.MODE_CONFIG[mode];
-    if (!config) {
-      throw new Error("[onModeChange] 未知的mode");
-    }
-
-    this.editor.metadata.filter("category", Category.Image).forEach((obj) => {
-      obj.selectable = config.selectable;
-      obj.evented = config.evented;
-      obj.setCoords();
-    });
+    this.manager.applyModeConfig(mode);
   };
 
+  /** 新图片添加到画布 - 应用当前模式的交互配置 */
   private onObjectAdded = (opt: any): void => {
     const obj = opt.target;
     if (!obj) return;
@@ -175,121 +230,49 @@ export class ImagePlugin extends BasePlugin {
     if (!isImage) return;
 
     const modePlugin = this.editor.getPlugin<any>("mode");
-    const mode = modePlugin?.mode as EditorMode;
-    const config = ImagePlugin.MODE_CONFIG[mode] ?? { selectable: false, evented: false };
-    obj.selectable = config.selectable;
-    obj.evented = config.evented;
+    const mode = (modePlugin?.mode as EditorMode) ?? EditorMode.Select;
+    this.manager.applyModeConfigToObject(obj, mode);
   };
 
-  // ─── 公开 API ─────────────────────────────────────────
-
-  async addImageFromFile(file: File): Promise<FabricImage | null> {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const dataUrl = e.target?.result as string;
-        if (!dataUrl) {
-          resolve(null);
-          return;
-        }
-        const img = await this.addImageFromUrl(dataUrl);
-        resolve(img);
-      };
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async addImageFromUrl(url: string): Promise<FabricImage | null> {
-    try {
-      const img = await FabricImage.fromURL(url, { crossOrigin: "anonymous" });
-
-      const canvasWidth = this.canvas.width || 800;
-      const canvasHeight = this.canvas.height || 600;
-      const maxWidth = canvasWidth * 0.8;
-      const maxHeight = canvasHeight * 0.8;
-
-      const imgWidth = img.width || 100;
-      const imgHeight = img.height || 100;
-      const scale = Math.min(maxWidth / imgWidth, maxHeight / imgHeight, 1);
-
-      const vpt = this.canvas.viewportTransform;
-      const zoom = this.canvas.getZoom();
-      let centerX = canvasWidth / 2;
-      let centerY = canvasHeight / 2;
-
-      if (vpt) {
-        centerX = (centerX - vpt[4]) / zoom;
-        centerY = (centerY - vpt[5]) / zoom;
-      }
-
-      img.set({
-        left: centerX,
-        top: centerY,
-        originX: "center",
-        originY: "center",
-        scaleX: scale,
-        scaleY: scale,
-        selectable: true,
-        evented: true,
-      });
-
-      const id = genId("img");
-      this.editor.metadata.set(img, { category: Category.Image, id });
-
-      this.canvas.add(img);
-
-      // 记录添加操作
-      const snapshot = this.historyHandler.createSnapshot(img);
-      this.historyHandler.recordAdd([id], [snapshot]);
-
-      const modePlugin = this.editor.getPlugin<any>("mode");
-      if (modePlugin?.mode === EditorMode.Select) {
-        this.canvas.setActiveObject(img);
-      }
-      this.canvas.requestRenderAll();
-
-      this.eventBus.emit("image:added", img);
-      return img;
-    } catch (e) {
-      console.error("Failed to add image:", e);
-      return null;
-    }
-  }
-
   protected onDestroy(): void {
+    // 移除画布事件
     this.canvas.off("object:added", this.onObjectAdded);
     this.canvas.off("object:modified", this.onObjectModified);
     this.canvas.off("before:transform", this.onBeforeTransform);
+    this.canvas.off("selection:created", this.onSelectionChange);
+    this.canvas.off("selection:updated", this.onSelectionChange);
+    this.canvas.off("selection:cleared", this.onSelectionCleared);
+    this.canvas.off("object:moving", this.onObjectTransform);
+    this.canvas.off("object:scaling", this.onObjectTransform);
+    this.canvas.off("object:rotating", this.onObjectTransform);
+
+    // 移除编辑器事件
     this.eventBus.off("mode:change", this.onModeChange);
+    this.eventBus.off("zoom:change", this.onZoomChange);
+
+    this.labelRenderer.destroy();
   }
 
   // ─── 序列化 ─────────────────────────────────────────
 
-  private get imageList(): FabricObject[] {
-    return this.editor.metadata.filter("category", Category.Image);
-  }
-
+  /** 导出图片数据 */
   exportData(): object[] {
-    return this.imageList.map((obj) => obj.toObject([...EXTRA_PROPS]));
+    return this.manager.exportData();
   }
 
+  /** 导入图片数据 */
   async importData(data: object[]): Promise<void> {
-    if (!Array.isArray(data)) return;
+    await this.manager.importData(data);
 
-    for (const item of data) {
-      const img = await FabricImage.fromObject(item as TOptions<ImageProps>);
-      this.canvas.add(img as unknown as FabricObject);
-    }
-
+    // 导入后应用当前模式配置
     const modePlugin = this.editor.getPlugin<any>("mode");
     const mode = modePlugin?.mode as EditorMode;
     if (mode) this.onModeChange({ mode });
-    this.canvas.requestRenderAll();
   }
 
+  /** 清空所有图片 */
   clearAll(): void {
-    this.imageList.forEach((obj) => this.canvas.remove(obj));
-    this.canvas.requestRenderAll();
+    this.manager.clearAll();
+    this.labelRenderer.hide();
   }
 }

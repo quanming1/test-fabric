@@ -1,0 +1,191 @@
+import { FabricImage, type FabricObject, type Canvas } from "fabric";
+import { BaseRenderer } from "../../../../core/render";
+import { Category, type ObjectMetadata } from "../../../../core";
+import { EditorMode } from "../../../mode/ModePlugin";
+import { IMAGE_MODE_CONFIG, type ImageStyle, DEFAULT_IMAGE_STYLE } from "../types";
+
+/** 图片渲染数据（用于 sync） */
+export interface ImageRenderData {
+    id: string;
+    obj: FabricObject;
+}
+
+/**
+ * 图片渲染器
+ * 继承 BaseRenderer，管理图片对象的渲染状态、交互配置
+ * 
+ * 注意：与 MarkerRenderer 不同，Image 的 Fabric 对象由外部创建并传入，
+ * 本渲染器主要负责状态同步和交互配置，而非创建对象
+ */
+export class ImageRenderer extends BaseRenderer<ImageRenderData, ImageStyle, FabricObject> {
+    private currentMode: EditorMode = EditorMode.Select;
+
+    constructor(canvas: Canvas, metadata: ObjectMetadata, style: Partial<ImageStyle> = {}) {
+        super(canvas, metadata, DEFAULT_IMAGE_STYLE, style);
+    }
+
+    protected getDataId(data: ImageRenderData): string {
+        return data.id;
+    }
+
+    /**
+     * 图片对象由外部创建，这里只做注册
+     */
+    protected createObject(id: string, data: ImageRenderData, index: number, inverseZoom: number): void {
+        // 图片已经在画布上，只需注册到 objects map
+        this.objects.set(id, data.obj);
+        this.applyModeConfigToObject(data.obj, this.currentMode);
+    }
+
+    /**
+     * 更新图片状态（主要是交互配置）
+     */
+    protected updateObject(id: string, obj: FabricObject, data: ImageRenderData, index: number, inverseZoom: number): void {
+        this.applyModeConfigToObject(obj, this.currentMode);
+    }
+
+    // ─── 模式管理 ─────────────────────────────────────────
+
+    /**
+     * 设置当前模式并更新所有图片的交互状态
+     */
+    setMode(mode: EditorMode): void {
+        this.currentMode = mode;
+        const config = IMAGE_MODE_CONFIG[mode];
+        if (!config) {
+            throw new Error(`[ImageRenderer] 未知的 mode: ${mode}`);
+        }
+
+        for (const obj of this.objects.values()) {
+            obj.selectable = config.selectable;
+            obj.evented = config.evented;
+            obj.setCoords();
+        }
+    }
+
+    /**
+     * 为单个图片应用模式配置
+     */
+    applyModeConfigToObject(obj: FabricObject, mode: EditorMode): void {
+        const config = IMAGE_MODE_CONFIG[mode] ?? { selectable: false, evented: false };
+        obj.selectable = config.selectable;
+        obj.evented = config.evented;
+    }
+
+    // ─── 图片创建辅助 ─────────────────────────────────────────
+
+    /**
+     * 计算图片的初始位置和缩放（居中显示，适应画布）
+     */
+    calculateInitialTransform(
+        imgWidth: number,
+        imgHeight: number
+    ): { left: number; top: number; scale: number } {
+        const canvasWidth = this.canvas.width || 800;
+        const canvasHeight = this.canvas.height || 600;
+        const maxWidth = canvasWidth * 0.8;
+        const maxHeight = canvasHeight * 0.8;
+
+        const scale = Math.min(maxWidth / imgWidth, maxHeight / imgHeight, 1);
+
+        const vpt = this.canvas.viewportTransform;
+        const zoom = this.canvas.getZoom();
+        let centerX = canvasWidth / 2;
+        let centerY = canvasHeight / 2;
+
+        if (vpt) {
+            centerX = (centerX - vpt[4]) / zoom;
+            centerY = (centerY - vpt[5]) / zoom;
+        }
+
+        return { left: centerX, top: centerY, scale };
+    }
+
+    /**
+     * 配置新创建的图片对象
+     */
+    configureNewImage(
+        img: FabricImage,
+        transform: { left: number; top: number; scale: number }
+    ): void {
+        img.set({
+            left: transform.left,
+            top: transform.top,
+            originX: "center",
+            originY: "center",
+            scaleX: transform.scale,
+            scaleY: transform.scale,
+            selectable: true,
+            evented: true,
+        });
+    }
+
+    // ─── 画布操作 ─────────────────────────────────────────
+
+    /**
+     * 添加图片到画布并注册
+     */
+    addImage(id: string, img: FabricObject): void {
+        this.canvas.add(img);
+        this.objects.set(id, img);
+        this.applyModeConfigToObject(img, this.currentMode);
+    }
+
+    /**
+     * 从画布移除图片
+     */
+    removeImage(id: string): void {
+        const obj = this.objects.get(id);
+        if (obj) {
+            this.canvas.remove(obj);
+            this.objects.delete(id);
+        }
+    }
+
+    /**
+     * 设置活动对象
+     */
+    setActiveObject(img: FabricObject): void {
+        this.canvas.setActiveObject(img);
+    }
+
+    /**
+     * 清空所有图片
+     */
+    clear(): void {
+        for (const obj of this.objects.values()) {
+            this.canvas.remove(obj);
+        }
+        this.objects.clear();
+    }
+
+    /**
+     * 请求重新渲染（覆盖为 public）
+     */
+    override requestRender(): void {
+        this.canvas.requestRenderAll();
+    }
+
+    // ─── 查询 ─────────────────────────────────────────
+
+    /**
+     * 获取所有图片对象
+     */
+    getImages(): FabricObject[] {
+        return this.metadata.filter("category", Category.Image);
+    }
+
+    /**
+     * 根据 ID 获取图片
+     */
+    getById(id: string): FabricObject | undefined {
+        return this.metadata.getById(id);
+    }
+
+    /**
+     * 检查是否已注册
+     */
+    has(id: string): boolean {
+        return this.objects.has(id);
+    }
+}

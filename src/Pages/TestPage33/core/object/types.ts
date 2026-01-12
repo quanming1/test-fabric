@@ -12,6 +12,8 @@ export enum Category {
     Region = "region",
     /** 辅助线 */
     Guideline = "guideline",
+    /** 浮动标签 */
+    Label = "label",
 }
 
 /**

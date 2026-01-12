@@ -6,6 +6,16 @@ import type { DrawPlugin } from "../draw/DrawPlugin";
 import type { ImagePlugin } from "../object/image/ImagePlugin";
 import type { MarkerPlugin } from "../object/marker/MarkerPlugin";
 
+/** 选择插件配置 */
+interface SelectionConfig {
+  /** 工具栏距离选中对象顶部的偏移量 */
+  toolbarOffsetY: number;
+}
+
+const DEFAULT_CONFIG: SelectionConfig = {
+  toolbarOffsetY: 10,
+};
+
 /**
  * 选择插件
  * 功能：对象选择、浮动工具栏定位
@@ -15,6 +25,7 @@ export class SelectionPlugin extends BasePlugin {
   readonly name = "selection";
 
   private activeObject: FabricObject | null = null;
+  private config: SelectionConfig;
 
   /** 当前选中对象（单选或 ActiveSelection） */
   get selected(): FabricObject | null {
@@ -33,6 +44,11 @@ export class SelectionPlugin extends BasePlugin {
   /** 是否多选 */
   get isMultiSelection(): boolean {
     return this.activeObject instanceof ActiveSelection;
+  }
+
+  constructor(config?: Partial<SelectionConfig>) {
+    super();
+    this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
   protected onInstall(): void {
@@ -91,7 +107,7 @@ export class SelectionPlugin extends BasePlugin {
 
     const pos: ToolbarPosition = {
       x: topLeft.x + (boundingRect.width * vpt[0]) / 2,
-      y: topLeft.y - 10,
+      y: topLeft.y - this.config.toolbarOffsetY,
       visible: true,
     };
 
