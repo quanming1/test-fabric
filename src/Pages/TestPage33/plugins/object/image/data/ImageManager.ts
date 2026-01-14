@@ -5,6 +5,9 @@ import { ImageHistoryHandler } from "./ImageHistoryHandler";
 import { ImageRenderer } from "../render/ImageRenderer";
 import { EXTRA_PROPS } from "../types";
 
+/** 图片上传服务地址 */
+const UPLOAD_API = "http://localhost:3001/api/upload/image";
+
 export interface ImageManagerOptions {
     editor: CanvasEditor;
 }
@@ -35,23 +38,47 @@ export class ImageManager {
         return this.renderer.getImages();
     }
 
+    // ─── 图片上传 ─────────────────────────────────────────
+
+    /**
+     * 上传图片文件到服务器
+     * @returns 图片的访问 URL
+     */
+    private async uploadImage(file: File): Promise<string> {
+        const formData = new FormData();
+        formData.append("image", file);
+
+        const response = await fetch(UPLOAD_API, {
+            method: "POST",
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error(`上传失败: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (!result.success || !result.url) {
+            throw new Error(result.error || "上传失败");
+        }
+
+        return result.url;
+    }
+
     // ─── 添加图片 ─────────────────────────────────────────
 
     async addFromFile(file: File): Promise<FabricImage | null> {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                const dataUrl = e.target?.result as string;
-                if (!dataUrl) {
-                    resolve(null);
-                    return;
-                }
-                const img = await this.addFromUrl(dataUrl);
-                resolve(img);
-            };
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(file);
-        });
+        try {
+            // 先上传图片获取 URL
+            const url = await this.uploadImage(file);
+            console.log("[ImageManager] 图片已上传:", url);
+
+            // 使用 URL 创建图片
+            return this.addFromUrl(url);
+        } catch (e) {
+            console.error("[ImageManager] 上传图片失败:", e);
+            return null;
+        }
     }
 
     async addFromUrl(url: string): Promise<FabricImage | null> {
@@ -165,12 +192,12 @@ export class ImageManager {
 
     // ─── 历史记录 ─────────────────────────────────────────
 
-    applyUndo(record: HistoryRecord): void {
-        this.historyHandler.applyUndo(record);
+    async applyUndo(record: HistoryRecord): Promise<void> {
+        await this.historyHandler.applyUndo(record);
     }
 
-    applyRedo(record: HistoryRecord): void {
-        this.historyHandler.applyRedo(record);
+    async applyRedo(record: HistoryRecord): Promise<void> {
+        await this.historyHandler.applyRedo(record);
     }
 
     // ─── 模式切换 ─────────────────────────────────────────

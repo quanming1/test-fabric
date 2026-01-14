@@ -17,7 +17,18 @@ export type {
     HistoryActionType,
     ObjectSnapshot,
     HistoryEvents,
+    AddRecordOptions,
 } from "./history";
+
+// Sync
+export { SyncManager } from "./sync";
+export type {
+    SyncEvent,
+    SyncManagerOptions,
+    PushEventResponse,
+    InitDataResponse,
+    SSEMessage,
+} from "./sync";
 
 // Utils
 export { CoordinateHelper, type ScreenPoint } from "./utils/coordinateUtils";

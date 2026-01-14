@@ -26,8 +26,8 @@ export interface Plugin {
   /** 导出插件数据 */
   exportData?(): unknown;
 
-  /** 导入插件数据 */
-  importData?(data: unknown): void;
+  /** 导入插件数据（支持异步） */
+  importData?(data: unknown): void | Promise<void>;
 
   /** 清空插件数据 */
   clearAll?(): void;
@@ -68,8 +68,8 @@ export abstract class BasePlugin implements Plugin {
   /** 导出插件数据，子类实现 */
   exportData?(): unknown;
 
-  /** 导入插件数据，子类实现 */
-  importData?(data: unknown): void;
+  /** 导入插件数据，子类实现（支持异步） */
+  importData?(data: unknown): void | Promise<void>;
 
   /** 清空插件数据，子类实现 */
   clearAll?(): void;

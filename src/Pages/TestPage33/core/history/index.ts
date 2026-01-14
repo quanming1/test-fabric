@@ -5,6 +5,7 @@ export type {
   HistoryActionType,
   ObjectSnapshot,
   HistoryEvents,
+  AddRecordOptions,
 } from "./types";
 
 // Handlers

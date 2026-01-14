@@ -158,13 +158,13 @@ export class ImagePlugin extends BasePlugin {
   };
 
   /** 应用撤销 */
-  applyUndo(record: HistoryRecord): void {
-    this.manager.applyUndo(record);
+  async applyUndo(record: HistoryRecord): Promise<void> {
+    await this.manager.applyUndo(record);
   }
 
   /** 应用重做 */
-  applyRedo(record: HistoryRecord): void {
-    this.manager.applyRedo(record);
+  async applyRedo(record: HistoryRecord): Promise<void> {
+    await this.manager.applyRedo(record);
   }
 
   // ─── 公开 API ─────────────────────────────────────────

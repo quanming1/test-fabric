@@ -1,5 +1,5 @@
 import type { HistoryManager } from "../HistoryManager";
-import type { HistoryRecord, ObjectSnapshot } from "../types";
+import type { HistoryRecord, ObjectSnapshot, AddRecordOptions } from "../types";
 
 /**
  * 历史记录处理器抽象基类
@@ -14,6 +14,8 @@ import type { HistoryRecord, ObjectSnapshot } from "../types";
 export abstract class BaseHistoryHandler<TData = unknown> {
     protected historyManager: HistoryManager;
     protected pluginName: string;
+    /** 是否默认需要同步，子类可覆盖 */
+    protected defaultNeedSync = false;
 
     constructor(historyManager: HistoryManager, pluginName: string) {
         this.historyManager = historyManager;
@@ -44,33 +46,33 @@ export abstract class BaseHistoryHandler<TData = unknown> {
     /**
      * 记录添加操作
      */
-    recordAdd(objectIds: string[], after: ObjectSnapshot[]): void {
+    recordAdd(objectIds: string[], after: ObjectSnapshot[], options?: AddRecordOptions): void {
         if (this.isPaused) return;
         this.historyManager.addRecord({
             type: "add",
             pluginName: this.pluginName,
             objectIds,
             after,
-        });
+        }, { needSync: this.defaultNeedSync, ...options });
     }
 
     /**
      * 记录删除操作
      */
-    recordRemove(objectIds: string[], before: ObjectSnapshot[]): void {
+    recordRemove(objectIds: string[], before: ObjectSnapshot[], options?: AddRecordOptions): void {
         if (this.isPaused) return;
         this.historyManager.addRecord({
             type: "remove",
             pluginName: this.pluginName,
             objectIds,
             before,
-        });
+        }, { needSync: this.defaultNeedSync, ...options });
     }
 
     /**
      * 记录修改操作
      */
-    recordModify(objectIds: string[], before: ObjectSnapshot[], after: ObjectSnapshot[]): void {
+    recordModify(objectIds: string[], before: ObjectSnapshot[], after: ObjectSnapshot[], options?: AddRecordOptions): void {
         if (this.isPaused) return;
         this.historyManager.addRecord({
             type: "modify",
@@ -78,7 +80,7 @@ export abstract class BaseHistoryHandler<TData = unknown> {
             objectIds,
             before,
             after,
-        });
+        }, { needSync: this.defaultNeedSync, ...options });
     }
 
     /**

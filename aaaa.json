@@ -1,0 +1,8 @@
+{
+  // 全局序号，由服务端分配,前端调用接口的时候不填写这个字段
+  "seq": 101,
+  // 操作发起者的标识，前端发起的时候必填，一个tab对应一个id
+  "clientId": "a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6",
+  // 操作后的对象状态快照
+  "snapshot": HistoryRecord | HistoryRecord[]
+}

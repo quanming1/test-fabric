@@ -30,6 +30,9 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
     /** 变换开始时的快照 */
     private transformStartSnapshots = new Map<string, ObjectSnapshot>();
 
+    /** 图片操作默认需要同步 */
+    protected override defaultNeedSync = true;
+
     constructor(options: ImageHistoryHandlerOptions) {
         super(options.historyManager, options.pluginName);
         this.editor = options.editor;
@@ -158,14 +161,14 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
 
     // ─── 撤销/重做 ─────────────────────────────────────────
 
-    applyUndo(record: HistoryRecord): void {
+    async applyUndo(record: HistoryRecord): Promise<void> {
         switch (record.type) {
             case "add":
                 this.removeObjectsByIds(record.objectIds);
                 break;
             case "remove":
                 if (record.before) {
-                    this.restoreObjects(record.before);
+                    await this.restoreObjects(record.before);
                 }
                 break;
             case "modify":
@@ -176,11 +179,11 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
         }
     }
 
-    applyRedo(record: HistoryRecord): void {
+    async applyRedo(record: HistoryRecord): Promise<void> {
         switch (record.type) {
             case "add":
                 if (record.after) {
-                    this.restoreObjects(record.after);
+                    await this.restoreObjects(record.after);
                 }
                 break;
             case "remove":
@@ -237,6 +240,7 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
             const obj = this.getImageList().find((o) => {
                 return this.editor.metadata.get(o)?.id === snapshot.id;
             });
+
             if (obj) {
                 obj.set(snapshot.data as Partial<ImageProps>);
                 obj.setCoords();

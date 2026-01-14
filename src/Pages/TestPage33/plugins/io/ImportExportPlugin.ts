@@ -79,7 +79,8 @@ export class ImportExportPlugin extends BasePlugin {
                     .sort((a, b) => (a.plugin.importOrder ?? 0) - (b.plugin.importOrder ?? 0));
 
                 for (const { plugin, pluginData } of sortedPlugins) {
-                    plugin.importData?.(pluginData);
+                    // 支持异步的 importData（如 ImagePlugin 需要加载图片）
+                    await plugin.importData?.(pluginData);
                 }
             }
 

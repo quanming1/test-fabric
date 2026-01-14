@@ -30,6 +30,8 @@ export interface HistoryRecord {
   before?: ObjectSnapshot[];
   /** 操作后状态 */
   after?: ObjectSnapshot[];
+  /** 是否需要同步到其他客户端 */
+  needSync?: boolean;
 }
 
 /**
@@ -62,4 +64,12 @@ export interface HistoryEvents {
   "history:undo": HistoryRecord;
   /** 执行重做 */
   "history:redo": HistoryRecord;
+}
+
+/**
+ * addRecord 方法的选项
+ */
+export interface AddRecordOptions {
+  /** 是否需要同步到其他客户端，默认 false */
+  needSync?: boolean;
 }
