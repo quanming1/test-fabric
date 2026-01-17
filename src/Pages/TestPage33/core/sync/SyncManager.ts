@@ -75,12 +75,11 @@ export class SyncManager {
                 }
             }
             console.log("this.editor.canvas.getObjects()", this.editor.canvas.getObjects());
+            console.log('data.events', data.events)
 
             // 3. 按顺序应用增量事件
             if (data.events && data.events.length > 0) {
                 this.editor.history.pause();
-
-                console.log('data.events', data.events)
                 try {
                     for (const event of data.events) {
                         await this.applySnapshot(event.snapshot);
@@ -95,6 +94,9 @@ export class SyncManager {
 
             this.initialized = true;
             console.log("[SyncManager] 初始化完成, clientId:", this._clientId);
+
+            // 5. 广播同步初始化完成事件
+            this.editor.eventBus.emit("sync:initialized");
         } catch (error) {
             console.error("[SyncManager] 初始化失败:", error);
             throw error;

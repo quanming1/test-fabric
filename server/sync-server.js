@@ -206,6 +206,80 @@ app.post("/api/canvas/sync/reset", (req, res) => {
     res.json({ success: true });
 });
 
+/**
+ * 调试接口：后端主动插入图片
+ * POST /api/canvas/sync/inject_image
+ * 可选参数：{ left, top, scaleX, scaleY }
+ */
+app.post("/api/canvas/sync/inject_image", (req, res) => {
+    const { left = 100, top = 100, scaleX = 1, scaleY = 1 } = req.body;
+
+    // 从 uploads 目录随机选一张图片
+    const files = fs.readdirSync(UPLOAD_DIR).filter((f) =>
+        /\.(jpg|jpeg|png|gif|webp)$/i.test(f)
+    );
+
+    if (files.length === 0) {
+        return res.status(400).json({ error: "uploads 目录下没有图片" });
+    }
+
+    const randomFile = files[Math.floor(Math.random() * files.length)];
+    const imageUrl = `http://localhost:${PORT}/uploads/${randomFile}`;
+    const imageId = `img_server_${Date.now()}_${Math.round(Math.random() * 1000)}`;
+
+    // 构造添加图片的历史记录
+    const snapshot = {
+        id: `record_server_${Date.now()}`,
+        type: "add",
+        pluginName: "image",
+        timestamp: Date.now(),
+        objectIds: [imageId],
+        after: [
+            {
+                id: imageId,
+                data: {
+                    type: "image",
+                    src: imageUrl,
+                    crossOrigin: "anonymous",
+                    left,
+                    top,
+                    scaleX,
+                    scaleY,
+                    angle: 0,
+                    originX: "left",
+                    originY: "top",
+                    data: {
+                        category: "image",
+                        id: imageId,
+                    },
+                },
+            },
+        ],
+        needSync: true,
+    };
+
+    // 分配序号并存入事件数组
+    seqCounter++;
+    const event = {
+        seq: seqCounter,
+        clientId: "server",
+        snapshot,
+    };
+    events.push(event);
+
+    // 广播给所有客户端
+    broadcast(event);
+
+    console.log(`[注入图片] seq=${event.seq}, imageId=${imageId}, file=${randomFile}`);
+
+    res.json({
+        success: true,
+        seq: event.seq,
+        imageId,
+        imageUrl,
+    });
+});
+
 // ─── 图片上传接口 ─────────────────────────────────────────
 
 /**
@@ -244,6 +318,7 @@ app.listen(PORT, () => {
     console.log(`  GET  /api/canvas/sync/full_data         - 获取初始化数据`);
     console.log(`  GET  /api/canvas/sync/debug             - 调试状态`);
     console.log(`  POST /api/canvas/sync/reset             - 重置数据`);
+    console.log(`  POST /api/canvas/sync/inject_image      - 后端注入图片`);
     console.log(`  POST /api/upload/image                  - 上传图片`);
     console.log(`  GET  /uploads/:filename                 - 访问图片\n`);
 });
