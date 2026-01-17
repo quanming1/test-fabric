@@ -76,8 +76,9 @@ function broadcast(event) {
         res.write(`data: ${message}\n\n`);
     });
 
-    console.log(`[广播] seq=${event.seq}, 客户端数=${sseClients.size}`);
+    console.log(`[广播] seq=${event.seq}, eventType=${event.eventType}, 客户端数=${sseClients.size}`);
 }
+
 
 // ─── 接口 ─────────────────────────────────────────
 
@@ -116,24 +117,24 @@ app.get("/api/canvas/sync/sse", (req, res) => {
  * POST /api/canvas/sync/event
  */
 app.post("/api/canvas/sync/event", (req, res) => {
-    const { clientId, snapshot } = req.body;
+    const { eventType, data } = req.body;
 
-    if (!clientId || !snapshot) {
-        return res.status(400).json({ error: "缺少 clientId 或 snapshot" });
+    if (!eventType || !data) {
+        return res.status(400).json({ error: "缺少 eventType 或 data" });
     }
 
     // 分配全局序号
     seqCounter++;
     const event = {
         seq: seqCounter,
-        clientId,
-        snapshot,
+        eventType,
+        data,
     };
 
     // 存入事件数组
     events.push(event);
 
-    console.log(`[事件] seq=${event.seq}, clientId=${clientId}, 事件总数=${events.length}`);
+    console.log(`[事件] seq=${event.seq}, eventType=${eventType}, 事件总数=${events.length}`);
 
     // 广播给所有客户端
     broadcast(event);
@@ -206,77 +207,49 @@ app.post("/api/canvas/sync/reset", (req, res) => {
     res.json({ success: true });
 });
 
+
 /**
  * 调试接口：后端主动插入图片
  * POST /api/canvas/sync/inject_image
- * 可选参数：{ left, top, scaleX, scaleY }
+ * 后端只负责传递图片 URL，前端负责封装为 HistoryRecord
  */
 app.post("/api/canvas/sync/inject_image", (req, res) => {
-    const { left = 100, top = 100, scaleX = 1, scaleY = 1 } = req.body;
+    let { urls } = req.body;
 
-    // 从 uploads 目录随机选一张图片
-    const files = fs.readdirSync(UPLOAD_DIR).filter((f) =>
-        /\.(jpg|jpeg|png|gif|webp)$/i.test(f)
-    );
+    // 如果没有传 urls，从 uploads 目录随机选一张图片
+    if (!urls || urls.length === 0) {
+        const files = fs.readdirSync(UPLOAD_DIR).filter((f) =>
+            /\.(jpg|jpeg|png|gif|webp)$/i.test(f)
+        );
 
-    if (files.length === 0) {
-        return res.status(400).json({ error: "uploads 目录下没有图片" });
+        if (files.length === 0) {
+            return res.status(400).json({ error: "uploads 目录下没有图片，且未提供 urls 参数" });
+        }
+
+        const randomFile = files[Math.floor(Math.random() * files.length)];
+        urls = [`http://localhost:${PORT}/uploads/${randomFile}`];
     }
 
-    const randomFile = files[Math.floor(Math.random() * files.length)];
-    const imageUrl = `http://localhost:${PORT}/uploads/${randomFile}`;
-    const imageId = `img_server_${Date.now()}_${Math.round(Math.random() * 1000)}`;
-
-    // 构造添加图片的历史记录
-    const snapshot = {
-        id: `record_server_${Date.now()}`,
-        type: "add",
-        pluginName: "image",
-        timestamp: Date.now(),
-        objectIds: [imageId],
-        after: [
-            {
-                id: imageId,
-                data: {
-                    type: "image",
-                    src: imageUrl,
-                    crossOrigin: "anonymous",
-                    left,
-                    top,
-                    scaleX,
-                    scaleY,
-                    angle: 0,
-                    originX: "left",
-                    originY: "top",
-                    data: {
-                        category: "image",
-                        id: imageId,
-                    },
-                },
-            },
-        ],
-        needSync: true,
-    };
-
-    // 分配序号并存入事件数组
+    // 构造 server:add_image 事件
     seqCounter++;
     const event = {
         seq: seqCounter,
-        clientId: "server",
-        snapshot,
+        eventType: "server:add_image",
+        data: {
+            urls,
+        },
     };
     events.push(event);
 
     // 广播给所有客户端
     broadcast(event);
 
-    console.log(`[注入图片] seq=${event.seq}, imageId=${imageId}, file=${randomFile}`);
+    console.log(`[注入图片] seq=${event.seq}, urls=${urls}`);
 
     res.json({
         success: true,
         seq: event.seq,
-        imageId,
-        imageUrl,
+        urls,
     });
 });
 

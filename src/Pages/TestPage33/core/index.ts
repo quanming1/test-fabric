@@ -22,12 +22,14 @@ export type {
 
 // Sync
 export { SyncManager } from "./sync";
+export { Handler, API } from "./sync";
 export type {
     SyncEvent,
+    SyncEventType,
+    SyncEventData,
+    ClientChangeData,
+    ServerAddImageData,
     SyncManagerOptions,
-    PushEventResponse,
-    InitDataResponse,
-    SSEMessage,
 } from "./sync";
 
 // Utils

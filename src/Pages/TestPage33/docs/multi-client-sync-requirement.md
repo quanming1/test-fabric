@@ -42,17 +42,71 @@
 
 **同步事件 SyncEvent：**
 
-```json
-{
-  "seq": 101,
-  "clientId": "a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6",
-  "snapshot": {}
+同步事件采用分类型设计，通过 `eventType` 字段区分不同的事件来源和处理方式：
+
+```typescript
+// 事件类型枚举
+type SyncEventType = "client:change" | "server:add_image";
+
+// 基础事件结构
+interface SyncEvent {
+  seq?: number;           // 全局序号，由服务端分配
+  eventType: SyncEventType;  // 事件类型
+  data: SyncEventData;    // 事件数据，根据 eventType 不同而不同
+}
+
+// 事件数据类型（联合类型）
+type SyncEventData = ClientChangeData | ServerAddImageData;
+
+// 前端变更事件数据
+interface ClientChangeData {
+  clientId: string;
+  snapshot: HistoryRecord | HistoryRecord[];
+}
+
+// 后端添加图片事件数据
+interface ServerAddImageData {
+  urls: string[];  // 图片 URL 数组
 }
 ```
 
-- `seq`：全局序号，由服务端分配，前端调用接口时不填写这个字段
-- `clientId`：操作发起者的标识，前端发起时必填，一个 Tab 对应一个 ID
-- `snapshot`：操作后的对象状态快照，类型为 HistoryRecord 或 HistoryRecord[]
+**事件类型说明：**
+
+| eventType | 说明 | data 结构 |
+|-----------|------|-----------|
+| `client:change` | 前端客户端发起的画布变更 | `{ clientId, snapshot }` |
+| `server:add_image` | 后端主动添加图片 | `{ urls: string[] }` |
+
+**示例 - 前端变更事件：**
+
+```json
+{
+  "seq": 101,
+  "eventType": "client:change",
+  "data": {
+    "clientId": "a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6",
+    "snapshot": { ... }
+  }
+}
+```
+
+**示例 - 后端添加图片事件：**
+
+```json
+{
+  "seq": 102,
+  "eventType": "server:add_image",
+  "data": {
+    "urls": ["http://localhost:3001/uploads/xxx.png"]
+  }
+}
+```
+
+**设计优势：**
+
+1. **职责清晰**：后端只需要知道图片 URL，不需要了解前端的 HistoryRecord 结构
+2. **易于扩展**：后续可以方便地添加新的事件类型，如 `server:add_text`、`server:batch_delete` 等
+3. **前端统一处理**：SyncManager 通过 switch-case 分发处理，`server:add_image` 在前端封装为 HistoryRecord 后复用 `client:change` 的处理逻辑
 
 **历史记录 HistoryRecord：**
 
@@ -101,21 +155,40 @@
 
 ## 三、客户端接收事件的处理流程
 
-客户端通过一个全局的事件监听机制来接收后端广播的事件。收到事件后，处理步骤如下：
+客户端通过 SSE 连接接收后端广播的事件。收到事件后，SyncManager 根据 `eventType` 字段进行分类处理，不同类型的事件走不同的处理分支。
+
+### 3.1 处理 client:change 事件
+
+这是前端客户端发起的画布变更事件，处理流程分三步：
 
 **第一步：判断是否需要处理**
 
-拿到事件后，首先比对事件里的 clientId 和自己的 clientId 是不是一样的。如果一样，说明这个事件是自己发起的，直接跳过，不做任何处理。
+比对事件中的 clientId 和本地的 clientId。如果相同，说明是自己发起的操作，直接跳过。
 
 **第二步：应用快照**
 
-如果 clientId 不一样，说明是其他端发起的操作，需要把这个操作应用到本地画布上。
-
-这里的关键设计是：复用现有的 redo（重做）逻辑来应用这个快照。这样做的好处是保持逻辑的一致性，不用单独维护一套"应用远程操作"的代码，减少代码分支。
+如果 clientId 不同，说明是其他端发起的操作。此时复用现有的 redo（重做）逻辑来应用快照，保持逻辑一致性，避免维护两套代码。
 
 **第三步：清空本地历史栈**
 
-应用完快照后，需要清空本地的历史记录栈（就是 HistoryManager 里的那个 stack 数组）。因为收到远程操作后，本地的历史记录已经"过时"了，继续保留可能会导致撤销重做时出现状态不一致的问题。
+应用完快照后清空本地历史记录栈。因为收到远程操作后，本地历史已经"过时"，继续保留可能导致撤销重做时状态不一致。
+
+### 3.2 处理 server:add_image 事件
+
+这是后端主动添加图片的事件。后端只知道图片的 URL，不了解前端的 HistoryRecord 结构，因此需要前端自己完成封装。
+
+**处理思路：**
+
+1. 从事件数据中取出 urls 数组
+2. 为每个 URL 在前端构造一个标准的 HistoryRecord（类型为 add，插件为 image）
+3. 将构造好的 HistoryRecord 交给 applySnapshot 处理，复用 `client:change` 的应用逻辑
+4. 清空本地历史栈
+
+**这样设计的好处：**
+
+- 后端职责简单，只负责传递"要添加什么图片"
+- 前端负责"怎么添加到画布"，掌握完整的控制权
+- 新增其他类型的服务端事件时（如 `server:add_text`），只需要在前端增加对应的封装逻辑即可
 
 ## 三点五、撤销重做操作的同步
 
@@ -176,8 +249,11 @@ POST /api/canvas/sync/event
 
 ```json
 {
-  "clientId": "string",
-  "snapshot": "object"
+  "eventType": "client:change",
+  "data": {
+    "clientId": "string",
+    "snapshot": "object"
+  }
 }
 ```
 
@@ -193,7 +269,34 @@ POST /api/canvas/sync/event
 - `seq`：服务端分配的全局序号
 - `eventArrayLength`：当前事件数组的长度，前端用于判断是否触发全量同步
 
-### 6.2 上传全量画布数据
+### 6.2 后端主动添加图片
+
+后端调试接口，用于向画布注入图片。
+
+**请求：**
+
+```
+POST /api/canvas/sync/inject_image
+```
+
+```json
+{
+  "urls": ["http://localhost:3001/uploads/xxx.png"]
+}
+```
+
+**响应：**
+
+```json
+{
+  "success": true,
+  "seq": 102
+}
+```
+
+后端收到后会构造 `server:add_image` 类型的事件并广播给所有客户端。
+
+### 6.3 上传全量画布数据
 
 当事件数组长度超过阈值时，前端调用此接口上传画布全量数据。
 
@@ -220,7 +323,7 @@ POST /api/canvas/sync/full
 
 后端收到后需要：存储 canvasJSON 数据，并清空事件数组。
 
-### 6.3 获取画布的全量数据
+### 6.4 获取画布的全量数据
 
 用户进入画布时调用，获取全量数据和增量事件。
 
@@ -238,13 +341,18 @@ GET /api/canvas/sync/full_data
   "events": [
     {
       "seq": 1,
-      "clientId": "xxx-xxx-xxx",
-      "snapshot": "object"
+      "eventType": "client:change",
+      "data": {
+        "clientId": "xxx-xxx-xxx",
+        "snapshot": "object"
+      }
     },
     {
       "seq": 2,
-      "clientId": "yyy-yyy-yyy",
-      "snapshot": "object"
+      "eventType": "server:add_image",
+      "data": {
+        "urls": ["http://localhost:3001/uploads/xxx.png"]
+      }
     }
   ]
 }
@@ -253,7 +361,7 @@ GET /api/canvas/sync/full_data
 - `canvasJSON`：画布全量数据，可能为 null（首次使用时）
 - `events`：增量事件数组，按 seq 升序排列
 
-### 6.4 SSE 连接
+### 6.5 SSE 连接
 
 客户端通过 SSE 连接接收服务端广播的事件。
 
@@ -263,20 +371,38 @@ GET /api/canvas/sync/full_data
 GET /api/canvas/sync/sse?clientId=xxx
 ```
 
-**广播数据格式：**
+**广播数据格式 - 前端变更事件：**
 
 ```json
 {
   "type": "sync_event",
   "data": {
     "seq": 101,
-    "clientId": "a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6",
-    "snapshot": "object"
+    "eventType": "client:change",
+    "data": {
+      "clientId": "a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6",
+      "snapshot": "object"
+    }
   }
 }
 ```
 
-### 6.5 图片上传接口
+**广播数据格式 - 后端添加图片事件：**
+
+```json
+{
+  "type": "sync_event",
+  "data": {
+    "seq": 102,
+    "eventType": "server:add_image",
+    "data": {
+      "urls": ["http://localhost:3001/uploads/xxx.png"]
+    }
+  }
+}
+```
+
+### 6.6 图片上传接口
 
 为避免图片 base64 数据过大导致同步失败，图片需要先上传到服务器，画布只保存 URL 引用。
 
@@ -413,22 +539,3 @@ flowchart TB
 - **ImportExportPlugin.ts**：导入导出插件，用于全量同步时导出画布 JSON
 - **SyncManager.ts**：新增，同步管理器，负责 SSE 连接、事件推送、全量同步、初始化
 - **types.ts**：类型定义文件，需要新增 SyncEvent、SSEMessage 等同步相关类型
-
-## 九、技术要点
-
-### 9.1 图片存储方式
-
-为避免 base64 数据过大导致同步请求失败（413 Payload Too Large），图片上传后存储在服务器，canvas 只保存 URL 引用。
-
-### 9.2 异步撤销重做
-
-由于 FabricImage.fromObject 是异步的，整个撤销重做调用链都需要改为 async/await，确保时序正确：
-- ImageHistoryHandler.applyUndo/applyRedo
-- ImageManager.applyUndo/applyRedo
-- ImagePlugin.applyUndo/applyRedo
-- HistoryManager.applyRecord/performUndo/performRedo
-- SyncManager.applySnapshot/handleReceivedEvent
-
-### 9.3 clientId 生成策略
-
-每个浏览器标签页对应一个唯一的 clientId，存储在 sessionStorage 中。这样同一个用户在不同标签页会有不同的 clientId，可以正确区分事件来源。

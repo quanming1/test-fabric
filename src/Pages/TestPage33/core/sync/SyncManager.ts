@@ -2,13 +2,16 @@ import type { CanvasEditor } from "../editor/CanvasEditor";
 import type { HistoryRecord } from "../history/types";
 import type {
     SyncEvent,
+    SyncEventType,
     SyncManagerOptions,
-    PushEventResponse,
-    InitDataResponse,
-    SSEMessage,
+    Handler,
+    API,
 } from "./types";
+import { ClientChangeHandler, ServerAddImageHandler } from "./handlers";
 
-/** 生成客户端唯一标识 */
+// ─── 工具函数 ─────────────────────────────────────────
+
+/** 生成客户端唯一标识（UUID v4 格式） */
 const generateClientId = (): string => {
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
         const r = (Math.random() * 16) | 0;
@@ -17,7 +20,7 @@ const generateClientId = (): string => {
     });
 };
 
-/** 获取或创建 clientId */
+/** 获取或创建 clientId，存储在 sessionStorage */
 const getOrCreateClientId = (): string => {
     const key = "canvas_sync_client_id";
     let clientId = sessionStorage.getItem(key);
@@ -36,19 +39,31 @@ const DEFAULT_OPTIONS: Required<SyncManagerOptions> = {
 
 /**
  * 同步管理器
- * 职责：管理多端画布同步的所有逻辑
+ *
+ * 职责：
+ * 1. 管理 SSE 连接，接收服务端广播的事件
+ * 2. 分发事件到对应的 Handler 处理
+ * 3. 推送本地事件到服务端
+ * 4. 管理全量同步和初始化流程
+ *
+ * 采用策略模式：SyncManager 只负责分发，具体处理逻辑由 Handler 实现
  */
 export class SyncManager {
-    private editor: CanvasEditor;
-    private options: Required<SyncManagerOptions>;
-    private _clientId: string;
-    private eventSource: EventSource | null = null;
-    private initialized = false;
+    private editor: CanvasEditor;                              // 编辑器实例
+    private options: Required<SyncManagerOptions>;             // 配置选项
+    private _clientId: string;                                 // 当前客户端唯一标识
+    private eventSource: EventSource | null = null;            // SSE 连接
+    private initialized = false;                               // 是否已初始化
+    private handlers: Map<SyncEventType, Handler.IHandler>;   // 事件处理器注册表
 
     constructor(editor: CanvasEditor, options?: SyncManagerOptions) {
         this.editor = editor;
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this._clientId = getOrCreateClientId();
+        this.handlers = new Map();
+
+        // 注册默认的事件处理器
+        this.registerDefaultHandlers();
     }
 
     /** 当前客户端唯一标识 */
@@ -56,9 +71,29 @@ export class SyncManager {
         return this._clientId;
     }
 
+    // ─── Handler 注册机制 ─────────────────────────────────────────
+
+    /**
+     * 注册事件处理器
+     * @param handler 处理器实例
+     */
+    registerHandler(handler: Handler.IHandler): void {
+        this.handlers.set(handler.eventType, handler);
+        console.log(`[SyncManager] 注册 Handler: ${handler.eventType}`);
+    }
+
+    /** 注册默认的事件处理器 */
+    private registerDefaultHandlers(): void {
+        this.registerHandler(new ClientChangeHandler());
+        this.registerHandler(new ServerAddImageHandler());
+    }
+
+
+    // ─── 初始化 ─────────────────────────────────────────
+
     /**
      * 初始化同步
-     * 获取全量数据和增量事件，应用到画布，然后建立 SSE 连接
+     * 流程：获取全量数据 → 应用增量事件 → 建立 SSE 连接
      */
     async initialize(): Promise<void> {
         if (this.initialized) return;
@@ -74,15 +109,16 @@ export class SyncManager {
                     await ioPlugin.import(data.canvasJSON, { clearCanvas: true });
                 }
             }
-            console.log("this.editor.canvas.getObjects()", this.editor.canvas.getObjects());
-            console.log('data.events', data.events)
+
+            console.log("[SyncManager] 画布对象:", this.editor.canvas.getObjects());
+            console.log("[SyncManager] 增量事件:", data.events);
 
             // 3. 按顺序应用增量事件
             if (data.events && data.events.length > 0) {
                 this.editor.history.pause();
                 try {
                     for (const event of data.events) {
-                        await this.applySnapshot(event.snapshot);
+                        await this.applyEventOnInit(event);
                     }
                 } finally {
                     this.editor.history.resume();
@@ -104,6 +140,52 @@ export class SyncManager {
     }
 
     /**
+     * 初始化时应用单个事件
+     * 使用 Handler 的 toRecords 方法转换数据
+     */
+    private async applyEventOnInit(event: SyncEvent): Promise<void> {
+        const handler = this.handlers.get(event.eventType);
+
+        if (!handler) {
+            console.warn(`[SyncManager] 未找到 Handler: ${event.eventType}`);
+            return;
+        }
+
+        // 如果 Handler 实现了 toRecords，使用它转换数据
+        if (handler.toRecords) {
+            const records = handler.toRecords(event as any);
+            await this.applySnapshot(records);
+        }
+    }
+
+    // ─── 事件处理 ─────────────────────────────────────────
+
+    /**
+     * 处理接收到的同步事件（SSE 推送）
+     * 根据 eventType 分发到对应的 Handler
+     */
+    async handleReceivedEvent(event: SyncEvent): Promise<void> {
+        console.log("[SyncManager] 收到事件:", event.seq, event.eventType);
+
+        const handler = this.handlers.get(event.eventType);
+
+        if (!handler) {
+            console.warn(`[SyncManager] 未知的事件类型: ${event.eventType}`);
+            return;
+        }
+
+        // 构建处理上下文
+        const context: Handler.Context = {
+            editor: this.editor,
+            clientId: this._clientId,
+            applySnapshot: this.applySnapshot.bind(this),
+        };
+
+        // 传入完整的 event，Handler 可以访问 seq 等信息
+        await handler.handle(event as any, context);
+    }
+
+    /**
      * 推送同步事件到服务端
      */
     async pushEvent(snapshot: HistoryRecord | HistoryRecord[]): Promise<void> {
@@ -121,29 +203,6 @@ export class SyncManager {
     }
 
     /**
-     * 处理接收到的同步事件
-     */
-    async handleReceivedEvent(event: SyncEvent): Promise<void> {
-        // 跳过自己发起的事件
-        if (event.clientId === this._clientId) {
-            return;
-        }
-
-        console.log("[SyncManager] 收到远程事件:", event.seq);
-
-        // 暂停历史记录，应用快照
-        this.editor.history.pause();
-        try {
-            await this.applySnapshot(event.snapshot);
-        } finally {
-            this.editor.history.resume();
-        }
-
-        // 清空本地历史栈
-        this.editor.history.clear();
-    }
-
-    /**
      * 触发全量同步
      */
     async triggerFullSync(): Promise<void> {
@@ -154,10 +213,7 @@ export class SyncManager {
                 return;
             }
 
-            // 导出画布数据
             const canvasJSON = await ioPlugin.export();
-
-            // 上传全量数据
             await this.postFullData(canvasJSON);
 
             console.log("[SyncManager] 全量同步完成");
@@ -172,13 +228,16 @@ export class SyncManager {
      */
     destroy(): void {
         this.disconnectSSE();
+        this.handlers.clear();
         this.initialized = false;
     }
+
 
     // ─── 私有方法 ─────────────────────────────────────────
 
     /**
-     * 应用快照到画布（复用 redo 逻辑）
+     * 应用快照到画布
+     * 复用各插件的 applyRedo 方法
      */
     private async applySnapshot(snapshot: HistoryRecord | HistoryRecord[]): Promise<void> {
         const records = Array.isArray(snapshot) ? snapshot : [snapshot];
@@ -209,7 +268,7 @@ export class SyncManager {
 
         this.eventSource.onmessage = (event) => {
             try {
-                const message: SSEMessage = JSON.parse(event.data);
+                const message: API.SSEMessage = JSON.parse(event.data);
                 if (message.type === "sync_event") {
                     this.handleReceivedEvent(message.data);
                 }
@@ -220,7 +279,6 @@ export class SyncManager {
 
         this.eventSource.onerror = (error) => {
             console.error("[SyncManager] SSE 连接错误:", error);
-            // 可以在这里实现重连逻辑
         };
 
         console.log("[SyncManager] SSE 连接已建立");
@@ -239,10 +297,8 @@ export class SyncManager {
 
     // ─── API 请求 ─────────────────────────────────────────
 
-    /**
-     * 获取初始化数据
-     */
-    private async fetchInitData(): Promise<InitDataResponse> {
+    /** 获取初始化数据 */
+    private async fetchInitData(): Promise<API.InitDataResponse> {
         const response = await fetch(`${this.options.apiBasePath}/full_data`);
         if (!response.ok) {
             throw new Error(`获取初始化数据失败: ${response.status}`);
@@ -250,13 +306,14 @@ export class SyncManager {
         return response.json();
     }
 
-    /**
-     * 推送同步事件
-     */
-    private async postEvent(snapshot: HistoryRecord | HistoryRecord[]): Promise<PushEventResponse> {
-        const body: Omit<SyncEvent, "seq"> = {
-            clientId: this._clientId,
-            snapshot,
+    /** 推送同步事件 */
+    private async postEvent(snapshot: HistoryRecord | HistoryRecord[]): Promise<API.PushEventResponse> {
+        const body: SyncEvent = {
+            eventType: "client:change",
+            data: {
+                clientId: this._clientId,
+                snapshot,
+            },
         };
 
         const response = await fetch(`${this.options.apiBasePath}/event`, {
@@ -271,9 +328,7 @@ export class SyncManager {
         return response.json();
     }
 
-    /**
-     * 上传全量数据
-     */
+    /** 上传全量数据 */
     private async postFullData(canvasJSON: object): Promise<void> {
         const body = {
             clientId: this._clientId,
