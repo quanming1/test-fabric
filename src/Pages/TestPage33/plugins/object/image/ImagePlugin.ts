@@ -175,7 +175,7 @@ export class ImagePlugin extends BasePlugin {
    * @param recordHistory 是否记录历史
    */
   remove(ids: string[], recordHistory: boolean): void {
-    this.manager.remove(ids, recordHistory);
+    this.manager.remove(ids, { recordHistory });
     this.labelRenderer.hide();
   }
 

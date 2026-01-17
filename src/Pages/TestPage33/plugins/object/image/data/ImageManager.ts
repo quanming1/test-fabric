@@ -1,144 +1,139 @@
-import { FabricImage, type FabricObject, type TOptions, type ImageProps } from "fabric";
+import { FabricImage, type FabricObject } from "fabric";
 import { Category, genId, type CanvasEditor, type HistoryRecord } from "../../../../core";
 import { EditorMode } from "../../../mode/ModePlugin";
 import { ImageHistoryHandler } from "./ImageHistoryHandler";
 import { ImageRenderer } from "../render/ImageRenderer";
+import { ImageFactory } from "../helper";
 import { EXTRA_PROPS } from "../types";
-
-/** 图片上传服务地址 */
-const UPLOAD_API = "http://localhost:3001/api/upload/image";
 
 export interface ImageManagerOptions {
     editor: CanvasEditor;
 }
 
+/** 添加图片的配置 */
+export interface AddImageConfig {
+    id?: string;                // 指定 ID，不传则自动生成
+    recordHistory?: boolean;    // 是否记录历史，默认 true
+    needSync?: boolean;         // 是否需要同步，默认 true
+    setActive?: boolean;        // 是否设为选中，默认 true
+}
+
+/** 删除图片的配置 */
+export interface RemoveImageConfig {
+    recordHistory?: boolean;    // 是否记录历史，默认 true
+}
+
 /**
  * 图片数据管理器
  * 职责：图片的增删改查、历史记录、序列化
+ * 
+ * 这是操作图片的唯一入口，所有图片操作都应该通过这个类
  */
 export class ImageManager {
-    private editor: CanvasEditor;
-    private historyHandler: ImageHistoryHandler;
-    private renderer: ImageRenderer;
+    private editor: CanvasEditor;               // 编辑器实例
+    private renderer: ImageRenderer;            // 渲染器
+    private historyHandler!: ImageHistoryHandler; // 历史处理器（延迟初始化）
 
     constructor(options: ImageManagerOptions) {
         this.editor = options.editor;
         this.renderer = new ImageRenderer(this.editor.canvas, this.editor.metadata);
+
+        // 延迟初始化 historyHandler，因为它需要 this
         this.historyHandler = new ImageHistoryHandler({
             editor: this.editor,
             historyManager: this.editor.history,
             pluginName: "image",
-            getImageList: () => this.imageList,
+            manager: this,
         });
     }
 
-    // ─── 查询 ─────────────────────────────────────────
+    // ─── 查询（公开） ─────────────────────────────────────────
 
+    /** 获取所有图片列表 */
     get imageList(): FabricObject[] {
         return this.renderer.getImages();
     }
 
-    // ─── 图片上传 ─────────────────────────────────────────
+    /** 根据 ID 获取图片 */
+    getById(id: string): FabricObject | undefined {
+        return this.editor.metadata.getById(id);
+    }
+
+
+    // ─── 核心操作（公开） ─────────────────────────────────────────
 
     /**
-     * 上传图片文件到服务器
-     * @returns 图片的访问 URL
+     * 添加图片到画布
+     * 这是添加图片的统一入口
+     * 
+     * @param img FabricImage 对象（由 ImageFactory 创建）
+     * @param config 配置选项
      */
-    private async uploadImage(file: File): Promise<string> {
-        const formData = new FormData();
-        formData.append("image", file);
+    add(img: FabricImage, config?: AddImageConfig): string {
+        const {
+            id = genId("img"),
+            recordHistory = true,
+            needSync = true,
+            setActive = true,
+        } = config ?? {};
 
-        const response = await fetch(UPLOAD_API, {
-            method: "POST",
-            body: formData,
-        });
+        // 1. 设置元数据
+        this.editor.metadata.set(img, { category: Category.Image, id });
 
-        if (!response.ok) {
-            throw new Error(`上传失败: ${response.status}`);
-        }
+        // 2. 添加到渲染器（会同时添加到画布和 objects Map）
+        this.renderer.addImage(id, img);
 
-        const result = await response.json();
-        if (!result.success || !result.url) {
-            throw new Error(result.error || "上传失败");
-        }
-
-        return result.url;
-    }
-
-    // ─── 添加图片 ─────────────────────────────────────────
-
-    async addFromFile(file: File): Promise<FabricImage | null> {
-        try {
-            // 先上传图片获取 URL
-            const url = await this.uploadImage(file);
-            console.log("[ImageManager] 图片已上传:", url);
-
-            // 使用 URL 创建图片
-            return this.addFromUrl(url);
-        } catch (e) {
-            console.error("[ImageManager] 上传图片失败:", e);
-            return null;
-        }
-    }
-
-    async addFromUrl(url: string): Promise<FabricImage | null> {
-        try {
-            const img = await FabricImage.fromURL(url, { crossOrigin: "anonymous" });
-
-            const imgWidth = img.width || 100;
-            const imgHeight = img.height || 100;
-            const transform = this.renderer.calculateInitialTransform(imgWidth, imgHeight);
-
-            this.renderer.configureNewImage(img, transform);
-
-            // 设置元数据
-            const id = genId("img");
-            this.editor.metadata.set(img, { category: Category.Image, id });
-
-            // 添加到画布并注册到渲染器
-            this.renderer.addImage(id, img);
-
-            // 记录历史
+        // 3. 记录历史
+        if (recordHistory) {
             const snapshot = this.historyHandler.createSnapshot(img);
-            this.historyHandler.recordAdd([id], [snapshot]);
+            this.historyHandler.recordAdd([id], [snapshot], { needSync });
+        }
 
-            // 在 Select 模式下选中新图片
+        // 4. 设为选中
+        if (setActive) {
             const modePlugin = this.editor.getPlugin<any>("mode");
             if ((modePlugin?.mode as EditorMode) === EditorMode.Select) {
                 this.renderer.setActiveObject(img);
             }
-
-            this.renderer.requestRender();
-            this.editor.eventBus.emit("image:added", img);
-
-            return img;
-        } catch (e) {
-            console.error("Failed to add image:", e);
-            return null;
         }
+
+        this.renderer.requestRender();
+        this.editor.eventBus.emit("image:added", img);
+
+        return id;
     }
 
-    // ─── 删除图片 ─────────────────────────────────────────
+    /**
+     * 删除图片
+     * 
+     * @param ids 要删除的图片 ID 列表
+     * @param config 配置选项
+     */
+    remove(ids: string[], config?: RemoveImageConfig): void {
+        const { recordHistory = true } = config ?? {};
 
-    remove(ids: string[], recordHistory: boolean): void {
+        // 获取要删除的图片对象（用于记录历史）
         const images = ids
             .map((id) => this.editor.metadata.getById(id))
-            .filter(
-                (obj): obj is FabricObject =>
-                    obj !== undefined && this.editor.metadata.is(obj, "category", Category.Image)
+            .filter((obj): obj is FabricObject =>
+                obj !== undefined && this.editor.metadata.is(obj, "category", Category.Image)
             );
 
         if (images.length === 0) return;
 
+        // 记录历史（在删除之前）
         if (recordHistory) {
             this.historyHandler.recordDelete(images);
         }
 
+        // 从渲染器删除
         ids.forEach((id) => this.renderer.removeImage(id));
+        this.renderer.requestRender();
     }
 
-    // ─── 克隆图片 ─────────────────────────────────────────
-
+    /**
+     * 克隆图片
+     */
     async clone(
         ids: string[],
         options?: { offset?: { x: number; y: number }; recordHistory?: boolean }
@@ -148,9 +143,8 @@ export class ImageManager {
 
         const sources = ids
             .map((id) => this.editor.metadata.getById(id))
-            .filter(
-                (obj): obj is FabricObject =>
-                    obj !== undefined && this.editor.metadata.is(obj, "category", Category.Image)
+            .filter((obj): obj is FabricObject =>
+                obj !== undefined && this.editor.metadata.is(obj, "category", Category.Image)
             );
 
         if (sources.length === 0) return [];
@@ -176,11 +170,45 @@ export class ImageManager {
         return clones;
     }
 
+    /** 记录克隆操作（供外部调用，如 SelectionPlugin） */
     recordClone(objects: FabricObject[]): void {
         this.historyHandler.recordClone(objects);
     }
 
-    // ─── 变换记录 ─────────────────────────────────────────
+
+    // ─── 便捷方法（公开） ─────────────────────────────────────────
+
+    /**
+     * 从 URL 添加图片（便捷方法）
+     */
+    async addFromUrl(url: string, config?: AddImageConfig): Promise<FabricImage | null> {
+        try {
+            const img = await ImageFactory.fromUrl(url);
+            this.configureNewImage(img);
+            this.add(img, config);
+            return img;
+        } catch (e) {
+            console.error("[ImageManager] 从 URL 添加图片失败:", e);
+            return null;
+        }
+    }
+
+    /**
+     * 从文件添加图片（便捷方法）
+     */
+    async addFromFile(file: File, config?: AddImageConfig): Promise<FabricImage | null> {
+        try {
+            const img = await ImageFactory.fromFile(file);
+            this.configureNewImage(img);
+            this.add(img, config);
+            return img;
+        } catch (e) {
+            console.error("[ImageManager] 从文件添加图片失败:", e);
+            return null;
+        }
+    }
+
+    // ─── 变换记录（公开） ─────────────────────────────────────────
 
     onTransformStart(objects: FabricObject[]): void {
         this.historyHandler.onTransformStart(objects);
@@ -190,7 +218,7 @@ export class ImageManager {
         this.historyHandler.onObjectModified(objects);
     }
 
-    // ─── 历史记录 ─────────────────────────────────────────
+    // ─── 历史记录（公开） ─────────────────────────────────────────
 
     async applyUndo(record: HistoryRecord): Promise<void> {
         await this.historyHandler.applyUndo(record);
@@ -200,7 +228,7 @@ export class ImageManager {
         await this.historyHandler.applyRedo(record);
     }
 
-    // ─── 模式切换 ─────────────────────────────────────────
+    // ─── 模式切换（公开） ─────────────────────────────────────────
 
     applyModeConfig(mode: EditorMode): void {
         this.renderer.setMode(mode);
@@ -210,7 +238,7 @@ export class ImageManager {
         this.renderer.applyModeConfigToObject(obj, mode);
     }
 
-    // ─── 序列化 ─────────────────────────────────────────
+    // ─── 序列化（公开） ─────────────────────────────────────────
 
     exportData(): object[] {
         return this.imageList.map((obj) => obj.toObject([...EXTRA_PROPS]));
@@ -220,21 +248,33 @@ export class ImageManager {
         if (!Array.isArray(data)) return;
 
         for (const item of data) {
-            const img = await FabricImage.fromObject(item as TOptions<ImageProps>);
-            const id = this.editor.metadata.get(img as unknown as FabricObject)?.id;
-            if (id) {
-                this.renderer.addImage(id, img as unknown as FabricObject);
-            } else {
-                // 兼容没有 id 的旧数据
-                this.editor.canvas.add(img as unknown as FabricObject);
-            }
-        }
+            const img = await ImageFactory.fromSnapshot(item as Record<string, unknown>);
+            const existingId = this.editor.metadata.get(img as unknown as FabricObject)?.id;
 
-        this.renderer.requestRender();
+            // 导入时不记录历史
+            this.add(img, {
+                id: existingId,
+                recordHistory: false,
+                needSync: false,
+                setActive: false,
+            });
+        }
     }
 
     clearAll(): void {
         this.renderer.clear();
         this.renderer.requestRender();
+    }
+
+    // ─── 私有方法 ─────────────────────────────────────────
+
+    /**
+     * 配置新创建的图片（居中、适应画布）
+     */
+    private configureNewImage(img: FabricImage): void {
+        const imgWidth = img.width || 100;
+        const imgHeight = img.height || 100;
+        const transform = this.renderer.calculateInitialTransform(imgWidth, imgHeight);
+        this.renderer.configureNewImage(img, transform);
     }
 }

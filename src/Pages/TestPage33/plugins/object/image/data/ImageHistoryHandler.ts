@@ -1,7 +1,11 @@
-import { FabricImage, type FabricObject, type TOptions, type ImageProps } from "fabric";
+import { type FabricObject } from "fabric";
 import { BaseHistoryHandler, Category, type HistoryRecord, type ObjectSnapshot, type HistoryManager, type CanvasEditor } from "../../../../core";
 import type { PointData, RegionData } from "../../marker/types";
+import { ImageFactory } from "../helper";
 import { EXTRA_PROPS } from "../types";
+
+// 前向声明，避免循环依赖
+import type { ImageManager } from "./ImageManager";
 
 /** MarkerPlugin 需要的方法接口 */
 interface MarkerPluginApi {
@@ -16,16 +20,22 @@ export interface ImageHistoryHandlerOptions {
     editor: CanvasEditor;
     historyManager: HistoryManager;
     pluginName: string;
-    getImageList: () => FabricObject[];
+    manager: ImageManager;  // 持有 ImageManager 引用
 }
 
 /**
  * 图片历史记录处理器
- * 职责：管理图片的历史记录（快照、撤销、重做）
+ * 
+ * 职责：
+ * 1. 创建和管理快照
+ * 2. 记录历史操作
+ * 3. 执行撤销/重做时，调用 ImageManager 的方法
+ * 
+ * 注意：不直接操作 canvas/renderer，而是通过 ImageManager
  */
 export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
     private editor: CanvasEditor;
-    private getImageList: () => FabricObject[];
+    private manager: ImageManager;  // ImageManager 引用
 
     /** 变换开始时的快照 */
     private transformStartSnapshots = new Map<string, ObjectSnapshot>();
@@ -36,11 +46,7 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
     constructor(options: ImageHistoryHandlerOptions) {
         super(options.historyManager, options.pluginName);
         this.editor = options.editor;
-        this.getImageList = options.getImageList;
-    }
-
-    private get canvas() {
-        return this.editor.canvas;
+        this.manager = options.manager;
     }
 
     private get markerPlugin(): MarkerPluginApi | null {
@@ -69,6 +75,7 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
 
         return { id, data };
     }
+
 
     // ─── 变换记录 ─────────────────────────────────────────
 
@@ -159,19 +166,23 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
         }
     }
 
+
     // ─── 撤销/重做 ─────────────────────────────────────────
 
     async applyUndo(record: HistoryRecord): Promise<void> {
         switch (record.type) {
             case "add":
-                this.removeObjectsByIds(record.objectIds);
+                // 撤销添加 = 删除，不记录历史
+                this.manager.remove(record.objectIds, { recordHistory: false });
                 break;
             case "remove":
+                // 撤销删除 = 恢复添加，不记录历史
                 if (record.before) {
-                    await this.restoreObjects(record.before);
+                    await this.restoreImages(record.before);
                 }
                 break;
             case "modify":
+                // 撤销修改 = 应用 before 快照
                 if (record.before) {
                     this.applySnapshots(record.before);
                 }
@@ -182,14 +193,17 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
     async applyRedo(record: HistoryRecord): Promise<void> {
         switch (record.type) {
             case "add":
+                // 重做添加 = 恢复添加，不记录历史
                 if (record.after) {
-                    await this.restoreObjects(record.after);
+                    await this.restoreImages(record.after);
                 }
                 break;
             case "remove":
-                this.removeObjectsByIds(record.objectIds);
+                // 重做删除 = 删除，不记录历史
+                this.manager.remove(record.objectIds, { recordHistory: false });
                 break;
             case "modify":
+                // 重做修改 = 应用 after 快照
                 if (record.after) {
                     this.applySnapshots(record.after);
                 }
@@ -199,53 +213,62 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
 
     // ─── 私有方法 ─────────────────────────────────────────
 
-    private removeObjectsByIds(ids: string[]): void {
-        const idSet = new Set(ids);
-        const toRemove = this.getImageList().filter((obj) => {
-            const id = this.editor.metadata.get(obj)?.id;
-            return id && idSet.has(id);
-        });
-        toRemove.forEach((obj) => this.canvas.remove(obj));
-    }
-
-    private async restoreObjects(snapshots: ObjectSnapshot[]): Promise<void> {
+    /**
+     * 从快照恢复图片
+     * 通过 ImageManager.add 添加，不记录历史
+     */
+    private async restoreImages(snapshots: ObjectSnapshot[]): Promise<void> {
         for (const snapshot of snapshots) {
-            const img = await FabricImage.fromObject(snapshot.data as TOptions<ImageProps>);
-            this.canvas.add(img as unknown as FabricObject);
+            const img = await ImageFactory.fromSnapshot(snapshot.data);
 
-            // 恢复关联的标记数据
-            const markerPlugin = this.markerPlugin;
-            if (markerPlugin) {
-                const markers = snapshot.data._markers as PointData[] | undefined;
-                const regions = snapshot.data._regions as RegionData[] | undefined;
-                if (markers && markers.length > 0) {
-                    markerPlugin.loadPoints([
-                        ...markerPlugin.getPointsData(),
-                        ...markers,
-                    ]);
-                }
-                if (regions && regions.length > 0) {
-                    markerPlugin.loadRegions([
-                        ...markerPlugin.getRegionsData(),
-                        ...regions,
-                    ]);
-                }
-            }
-        }
-        this.canvas.requestRenderAll();
-    }
-
-    private applySnapshots(snapshots: ObjectSnapshot[]): void {
-        for (const snapshot of snapshots) {
-            const obj = this.getImageList().find((o) => {
-                return this.editor.metadata.get(o)?.id === snapshot.id;
+            // 通过 manager.add 添加，不记录历史
+            this.manager.add(img, {
+                id: snapshot.id,
+                recordHistory: false,
+                needSync: false,
+                setActive: false,
             });
 
+            // 恢复关联的标记数据
+            this.restoreMarkers(snapshot);
+        }
+    }
+
+    /**
+     * 恢复关联的标记数据
+     */
+    private restoreMarkers(snapshot: ObjectSnapshot): void {
+        const markerPlugin = this.markerPlugin;
+        if (!markerPlugin) return;
+
+        const markers = snapshot.data._markers as PointData[] | undefined;
+        const regions = snapshot.data._regions as RegionData[] | undefined;
+
+        if (markers && markers.length > 0) {
+            markerPlugin.loadPoints([
+                ...markerPlugin.getPointsData(),
+                ...markers,
+            ]);
+        }
+        if (regions && regions.length > 0) {
+            markerPlugin.loadRegions([
+                ...markerPlugin.getRegionsData(),
+                ...regions,
+            ]);
+        }
+    }
+
+    /**
+     * 应用快照到现有图片（用于 modify 的撤销/重做）
+     */
+    private applySnapshots(snapshots: ObjectSnapshot[]): void {
+        for (const snapshot of snapshots) {
+            const obj = this.manager.getById(snapshot.id);
             if (obj) {
-                obj.set(snapshot.data as Partial<ImageProps>);
+                obj.set(snapshot.data as any);
                 obj.setCoords();
             }
         }
-        this.canvas.requestRenderAll();
+        this.editor.canvas.requestRenderAll();
     }
 }
