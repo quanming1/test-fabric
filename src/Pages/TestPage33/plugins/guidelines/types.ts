@@ -3,11 +3,18 @@ import type { Category } from "../../core";
 /** 辅助线方向：vertical=竖线，horizontal=横线 */
 export type GuidelineType = "vertical" | "horizontal";
 
+/** 交点坐标 */
+export interface IntersectionPoint {
+    x: number;
+    y: number;
+}
+
 /** 辅助线数据 */
 export interface Guideline {
     type: GuidelineType;
     position: number; // 辅助线在场景坐标中的位置（竖线是x坐标，横线是y坐标）
     sourceId: string; // 触发这条辅助线的参照物ID，"__canvas__"表示画布
+    intersections?: IntersectionPoint[]; // 辅助线与目标元素角点的交点
 }
 
 /** 吸附点：表示一个可能的对齐位置 */

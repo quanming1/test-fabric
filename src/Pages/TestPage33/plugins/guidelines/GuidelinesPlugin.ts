@@ -7,7 +7,7 @@ import { GuidelineRenderer } from "./renderer";
 import { MoveHandler, ScaleHandler, type HandlerContext } from "./handlers";
 
 const DEFAULT_STYLE: GuidelinesStyle = {
-    color: "#ff00ff",
+    color: "#ff0000",
     lineWidth: 1,
     snapThreshold: 5,
 };

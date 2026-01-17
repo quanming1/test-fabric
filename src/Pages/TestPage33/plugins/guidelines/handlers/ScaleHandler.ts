@@ -49,7 +49,10 @@ export class ScaleHandler extends BaseHandler {
                         minDistX = Math.abs(snap.delta);
                         deltaX = snap.delta;
                         snappedX = true;
-                        this.replaceGuideline(guidelines, "vertical", snap.position, id);
+                        const intersections = this.getVerticalIntersections(
+                            snap.position, targetBounds, deltaX, checkLeft, checkRight
+                        );
+                        this.replaceGuideline(guidelines, "vertical", snap.position, id, intersections);
                     }
                 }
             }
@@ -68,7 +71,10 @@ export class ScaleHandler extends BaseHandler {
                         minDistY = Math.abs(snap.delta);
                         deltaY = snap.delta;
                         snappedY = true;
-                        this.replaceGuideline(guidelines, "horizontal", snap.position, id);
+                        const intersections = this.getHorizontalIntersections(
+                            snap.position, targetBounds, deltaY, checkTop, checkBottom
+                        );
+                        this.replaceGuideline(guidelines, "horizontal", snap.position, id, intersections);
                     }
                 }
             }
@@ -85,7 +91,6 @@ export class ScaleHandler extends BaseHandler {
         const corner = transform.corner;
         const jitterThreshold = this.getJitterThreshold();
         const currentCorners = this.getCorners(target);
-        // 计算新的四角坐标
         const newCorners = this.calculateNewCorners(
             currentCorners,
             corner,
@@ -94,26 +99,12 @@ export class ScaleHandler extends BaseHandler {
             jitterThreshold
         );
 
-        // 应用新的四角坐标
         this.applyCorners(target, newCorners);
-
         target.setCoords();
     }
 
-
     /**
      * 根据拖动的控制点和偏移量计算新的四角坐标
-     * 规则：对角固定，其他角根据偏移量调整
-     *
-     * 控制点与固定角的对应关系：
-     * - tl (左上角): 对角 br 固定
-     * - tr (右上角): 对角 bl 固定
-     * - bl (左下角): 对角 tr 固定
-     * - br (右下角): 对角 tl 固定
-     * - ml (左中): 右边固定
-     * - mr (右中): 左边固定
-     * - mt (上中): 下边固定
-     * - mb (下中): 上边固定
      */
     private calculateNewCorners(
         current: Corners,
@@ -129,7 +120,6 @@ export class ScaleHandler extends BaseHandler {
             br: { ...current.br },
         };
 
-        // 应用防抖
         let finalDeltaX = deltaX;
         let finalDeltaY = deltaY;
 
@@ -151,7 +141,6 @@ export class ScaleHandler extends BaseHandler {
             }
         }
 
-        // 根据控制点调整对应的角
         if (corner.includes("l")) {
             newCorners.tl.x += finalDeltaX;
             newCorners.bl.x += finalDeltaX;
@@ -170,20 +159,6 @@ export class ScaleHandler extends BaseHandler {
         }
 
         return newCorners;
-    }
-
-    /**
-     * 将四角坐标转换为边界信息
-     */
-    private cornersToBounds(corners: Corners) {
-        return {
-            left: corners.tl.x,
-            right: corners.tr.x,
-            top: corners.tl.y,
-            bottom: corners.bl.y,
-            centerX: (corners.tl.x + corners.tr.x) / 2,
-            centerY: (corners.tl.y + corners.bl.y) / 2,
-        };
     }
 
     /**

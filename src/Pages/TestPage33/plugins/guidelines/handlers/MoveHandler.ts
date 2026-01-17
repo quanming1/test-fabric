@@ -36,7 +36,8 @@ export class MoveHandler extends BaseHandler {
                     minDistX = Math.abs(snap.delta);
                     deltaX = snap.delta;
                     snappedX = true;
-                    this.replaceGuideline(guidelines, "vertical", snap.position, id);
+                    const intersections = this.getVerticalIntersections(snap.position, targetBounds, deltaX);
+                    this.replaceGuideline(guidelines, "vertical", snap.position, id, intersections);
                 }
             }
 
@@ -47,7 +48,8 @@ export class MoveHandler extends BaseHandler {
                     minDistY = Math.abs(snap.delta);
                     deltaY = snap.delta;
                     snappedY = true;
-                    this.replaceGuideline(guidelines, "horizontal", snap.position, id);
+                    const intersections = this.getHorizontalIntersections(snap.position, targetBounds, deltaY);
+                    this.replaceGuideline(guidelines, "horizontal", snap.position, id, intersections);
                 }
             }
         }
@@ -115,20 +117,6 @@ export class MoveHandler extends BaseHandler {
             tr: { x: current.tr.x + finalDeltaX, y: current.tr.y + finalDeltaY },
             bl: { x: current.bl.x + finalDeltaX, y: current.bl.y + finalDeltaY },
             br: { x: current.br.x + finalDeltaX, y: current.br.y + finalDeltaY },
-        };
-    }
-
-    /**
-     * 将四角坐标转换为边界信息（供 SnapDetector 使用）
-     */
-    private cornersToBounds(corners: Corners) {
-        return {
-            left: corners.tl.x,
-            right: corners.tr.x,
-            top: corners.tl.y,
-            bottom: corners.bl.y,
-            centerX: (corners.tl.x + corners.tr.x) / 2,
-            centerY: (corners.tl.y + corners.bl.y) / 2,
         };
     }
 }

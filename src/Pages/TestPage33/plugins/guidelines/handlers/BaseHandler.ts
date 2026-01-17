@@ -1,5 +1,5 @@
 import type { Canvas, FabricObject } from "fabric";
-import type { Guideline, GuidelinesStyle, ObjectBounds, SnapResult } from "../types";
+import type { Guideline, GuidelinesStyle, ObjectBounds, IntersectionPoint, SnapResult } from "../types";
 import type { ObjectMetadata } from "../../../core";
 import { BoundsCalculator } from "../utils";
 import { Category } from "../../../core";
@@ -254,10 +254,91 @@ export abstract class BaseHandler {
         guidelines: Guideline[],
         type: "vertical" | "horizontal",
         position: number,
-        sourceId: string
+        sourceId: string,
+        intersections?: IntersectionPoint[]
     ): void {
         const filtered = guidelines.filter((g) => g.type !== type);
         guidelines.length = 0;
-        guidelines.push(...filtered, { type, position, sourceId });
+        guidelines.push(...filtered, { type, position, sourceId, intersections });
+    }
+
+    // ==================== 边界转换 ====================
+
+    /** 边界信息类型 */
+    protected cornersToBounds(corners: Corners) {
+        return {
+            left: corners.tl.x,
+            right: corners.tr.x,
+            top: corners.tl.y,
+            bottom: corners.bl.y,
+            centerX: (corners.tl.x + corners.tr.x) / 2,
+            centerY: (corners.tl.y + corners.bl.y) / 2,
+        };
+    }
+
+    // ==================== 交点计算 ====================
+
+    /**
+     * 获取垂直辅助线与目标边界的交点
+     */
+    protected getVerticalIntersections(
+        lineX: number,
+        targetBounds: ReturnType<typeof this.cornersToBounds>,
+        deltaX: number,
+        checkLeft = true,
+        checkRight = true
+    ): IntersectionPoint[] {
+        const intersections: IntersectionPoint[] = [];
+        const adjustedLeft = targetBounds.left + deltaX;
+        const adjustedRight = targetBounds.right + deltaX;
+        const adjustedCenterX = targetBounds.centerX + deltaX;
+        const tolerance = 0.5;
+
+        if (checkLeft && Math.abs(lineX - adjustedLeft) < tolerance) {
+            intersections.push({ x: lineX, y: targetBounds.top });
+            intersections.push({ x: lineX, y: targetBounds.bottom });
+        }
+        if (checkRight && Math.abs(lineX - adjustedRight) < tolerance) {
+            intersections.push({ x: lineX, y: targetBounds.top });
+            intersections.push({ x: lineX, y: targetBounds.bottom });
+        }
+        // 中心点（仅移动时检测）
+        if (checkLeft && checkRight && Math.abs(lineX - adjustedCenterX) < tolerance) {
+            intersections.push({ x: lineX, y: targetBounds.centerY });
+        }
+
+        return intersections;
+    }
+
+    /**
+     * 获取水平辅助线与目标边界的交点
+     */
+    protected getHorizontalIntersections(
+        lineY: number,
+        targetBounds: ReturnType<typeof this.cornersToBounds>,
+        deltaY: number,
+        checkTop = true,
+        checkBottom = true
+    ): IntersectionPoint[] {
+        const intersections: IntersectionPoint[] = [];
+        const adjustedTop = targetBounds.top + deltaY;
+        const adjustedBottom = targetBounds.bottom + deltaY;
+        const adjustedCenterY = targetBounds.centerY + deltaY;
+        const tolerance = 0.5;
+
+        if (checkTop && Math.abs(lineY - adjustedTop) < tolerance) {
+            intersections.push({ x: targetBounds.left, y: lineY });
+            intersections.push({ x: targetBounds.right, y: lineY });
+        }
+        if (checkBottom && Math.abs(lineY - adjustedBottom) < tolerance) {
+            intersections.push({ x: targetBounds.left, y: lineY });
+            intersections.push({ x: targetBounds.right, y: lineY });
+        }
+        // 中心点（仅移动时检测）
+        if (checkTop && checkBottom && Math.abs(lineY - adjustedCenterY) < tolerance) {
+            intersections.push({ x: targetBounds.centerX, y: lineY });
+        }
+
+        return intersections;
     }
 }
