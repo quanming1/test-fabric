@@ -107,24 +107,25 @@ export class GuidelinesPlugin extends BasePlugin {
 
         if (result.snapped) {
             this.moveHandler.applySnap(target, result);
+            this.emitSnapEvents(target, result.guidelines);
         }
 
         this.renderer.render(result.guidelines);
     };
 
     private onObjectScaling = (opt: BasicTransformEvent<TPointerEvent> & { target: FabricObject }): void => {
-        if (!this.enabled || !this.isScaling || !this.currentTransform) return;
+        // if (!this.enabled || !this.isScaling || !this.currentTransform) return;
 
-        const target = opt.target;
-        if (!target) return;
+        // const target = opt.target;
+        // if (!target) return;
 
-        const result = this.scaleHandler.calculateSnap(target, this.currentTransform);
+        // const result = this.scaleHandler.calculateSnap(target, this.currentTransform);
 
-        if (result.snapped) {
-            this.scaleHandler.applySnap(target, result, this.currentTransform);
-        }
+        // if (result.snapped) {
+        //     this.scaleHandler.applySnap(target, result, this.currentTransform);
+        // }
 
-        this.renderer.render(result.guidelines);
+        // this.renderer.render(result.guidelines);
     };
 
     private onObjectModified = (): void => {
@@ -135,6 +136,18 @@ export class GuidelinesPlugin extends BasePlugin {
         this.scaleHandler.reset();
         this.renderer.clear();
     };
+
+    /** 触发辅助线吸附事件 */
+    private emitSnapEvents(target: FabricObject, guidelines: import("./types").Guideline[]): void {
+        const targetId = this.editor.metadata.get(target)?.id ?? "";
+
+        for (const guideline of guidelines) {
+            this.eventBus.emit("guideline:snap", {
+                targetId,
+                direction: guideline.type
+            });
+        }
+    }
 
     private onZoomChange = (): void => {
         this.renderer.updateWidth();

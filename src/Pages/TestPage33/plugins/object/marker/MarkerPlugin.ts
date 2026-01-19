@@ -254,6 +254,9 @@ export class MarkerPlugin extends BasePlugin {
         this.eventBus.on("zoom:change", this.syncAll);
         this.eventBus.on("layer:change", this.bringAllToFront);
 
+        // 辅助线吸附：同步标记位置（吸附修正发生在 object:moving 之后）
+        this.eventBus.on("guideline:snap", this.syncAll);
+
         // 模式切换：调整标记的事件响应状态
         this.eventBus.on("mode:change", this.onModeChange);
 
@@ -414,6 +417,7 @@ export class MarkerPlugin extends BasePlugin {
         // 移除事件总线订阅
         this.eventBus.off("zoom:change", this.syncAll);
         this.eventBus.off("layer:change", this.bringAllToFront);
+        this.eventBus.off("guideline:snap", this.syncAll);
         this.eventBus.off("mode:change", this.onModeChange);
         this.eventBus.off("history:undo:after", this.syncAll);
         this.eventBus.off("history:redo:after", this.syncAll);

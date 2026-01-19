@@ -22,6 +22,13 @@ export interface PointView {
   y: number;
 }
 
+/** 辅助线命中信息 */
+/** 辅助线命中信息 */
+export interface GuidelineSnapInfo {
+  targetId: string;  // 被吸附的目标元素ID
+  direction: "horizontal" | "vertical";
+}
+
 /** 编辑器事件类型 */
 export interface EditorEvents {
   "zoom:change": (zoom: number) => void;
@@ -31,4 +38,5 @@ export interface EditorEvents {
   "markers:viewUpdate": (views: Record<string, PointView>) => void;
   "layer:change": () => void;
   resize: (size: { width: number; height: number }) => void;
+  "guideline:snap": (info: GuidelineSnapInfo) => void;
 }
