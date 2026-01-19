@@ -83,3 +83,38 @@ export function animate(
 
     requestAnimationFrame(tick);
 }
+
+/**
+ * 执行多值动画（同时动画多个属性）
+ */
+export function animateMultiple<T extends Record<string, number>>(
+    from: T,
+    to: T,
+    options: AnimationOptions,
+    onUpdate: (values: T) => void,
+    onComplete?: () => void
+): void {
+    const startTime = performance.now();
+    const keys = Object.keys(from) as (keyof T)[];
+
+    const tick = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / options.duration, 1);
+        const easedProgress = options.easing(progress);
+
+        const current = {} as T;
+        for (const key of keys) {
+            current[key] = (from[key] + (to[key] - from[key]) * easedProgress) as T[keyof T];
+        }
+
+        onUpdate(current);
+
+        if (progress < 1) {
+            requestAnimationFrame(tick);
+        } else {
+            onComplete?.();
+        }
+    };
+
+    requestAnimationFrame(tick);
+}
