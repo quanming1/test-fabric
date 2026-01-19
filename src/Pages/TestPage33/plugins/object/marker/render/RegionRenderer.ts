@@ -1,6 +1,6 @@
 import { Rect, Circle, Text, Group, Path, type Canvas } from "fabric";
 import { BaseRenderer } from "../../../../core/render";
-import type { RegionData, RegionStyle, PointStyle } from "../types";
+import type { RegionData, RegionStyle, PointStyle, RenderConfig } from "../types";
 import { DEFAULT_REGION_STYLE, DEFAULT_POINT_STYLE } from "../types";
 import { Category, type ObjectMetadata } from "../../../../core";
 import { getFullTransformMatrix, extractScaleAndAngle } from "../../../../utils";
@@ -21,7 +21,11 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
     // 节流相关
     private throttleTimer: ReturnType<typeof setTimeout> | null = null;
     private pendingData: RegionData[] | null = null;
-    private static readonly THROTTLE_DELAY = 100; // ~60fps
+    private pendingConfig: RenderConfig | null = null;
+    private static readonly THROTTLE_DELAY = 50; // ~60fps
+
+    // 尺寸缓存（用于 positionOnly 优化）
+    private sizeCache = new Map<string, { width: number; height: number; zoom: number }>();
 
     constructor(canvas: Canvas, metadata: ObjectMetadata, style: Partial<RegionStyle> = {}) {
         super(canvas, metadata, DEFAULT_REGION_STYLE, style);
@@ -38,30 +42,65 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
     }
 
     /** 
-     * 渲染同步 - 支持可选节流
+     * 同步渲染 - 支持配置控制行为
      * @param data 区域数据
-     * @param throttle 是否启用节流（默认 false）
+     * @param config 渲染配置
+     *   - positionOnly: 只更新位置，不重建边框（用于 moving）
+     *   - throttle: 启用节流（用于 zoom 等高频场景）
      */
-    render(data: RegionData[], throttle = false): void {
-        if (!throttle) {
-            this.sync(data);
-            return;
+    override sync(data: RegionData[], config: RenderConfig = {}): void {
+        const { throttle = false } = config;
+
+        if (throttle) {
+            // 节流模式：立即执行首次调用，后续调用在延迟后批量处理
+            this.pendingData = data;
+            this.pendingConfig = config;
+
+            if (this.throttleTimer) return;
+
+            this.doSync(data, config);
+
+            this.throttleTimer = setTimeout(() => {
+                this.throttleTimer = null;
+                if (this.pendingData) {
+                    this.doSync(this.pendingData, this.pendingConfig ?? {});
+                    this.pendingData = null;
+                    this.pendingConfig = null;
+                }
+            }, RegionRenderer.THROTTLE_DELAY);
+        } else {
+            this.doSync(data, config);
+        }
+    }
+
+    /** 实际执行同步 */
+    private doSync(data: RegionData[], config: RenderConfig): void {
+        if (!this.isMounted) this.mount();
+
+        const activeIds = new Set(data.map((d) => this.getDataId(d)));
+        const inverseZoom = this.getInverseZoom();
+
+        // 移除失效对象
+        for (const [id, obj] of this.objects) {
+            if (!activeIds.has(id)) {
+                this.removeObject(id, obj);
+                this.sizeCache.delete(id);
+            }
         }
 
-        // 节流模式：立即执行首次调用，后续调用在延迟后批量处理
-        this.pendingData = data;
+        // 创建或更新
+        data.forEach((item, index) => {
+            const id = this.getDataId(item);
+            const existing = this.objects.get(id);
 
-        if (this.throttleTimer) return;
-
-        this.sync(data);
-
-        this.throttleTimer = setTimeout(() => {
-            this.throttleTimer = null;
-            if (this.pendingData) {
-                this.sync(this.pendingData);
-                this.pendingData = null;
+            if (existing) {
+                this.updateObjectWithConfig(id, existing, item, index, inverseZoom, config);
+            } else {
+                this.createObject(id, item, index, inverseZoom);
             }
-        }, RegionRenderer.THROTTLE_DELAY);
+        });
+
+        this.requestRender();
     }
 
     protected createObject(id: string, data: RegionData, index: number, inverseZoom: number): void {
@@ -98,35 +137,66 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
     }
 
     protected updateObject(id: string, group: Group, data: RegionData, index: number, inverseZoom: number): void {
+        this.updateObjectWithConfig(id, group, data, index, inverseZoom, {});
+    }
+
+    /** 更新对象 - 支持 positionOnly 优化 */
+    private updateObjectWithConfig(
+        id: string,
+        group: Group,
+        data: RegionData,
+        index: number,
+        inverseZoom: number,
+        config: RenderConfig
+    ): void {
         const pos = this.getTransformedRect(data);
         if (!pos) return;
 
-        // 移除旧的 group，重新创建
-        this.canvas.remove(group);
-        this.objects.delete(id);
+        const { positionOnly = false } = config;
+        const cached = this.sizeCache.get(id);
+        const currentZoom = this.getZoom();
 
-        const { fill, stroke } = this.style;
-        const blocks = this.createBorderBlocks(pos.width, pos.height, stroke, inverseZoom);
+        // 判断是否需要重建边框
+        const needRebuild = !positionOnly || !cached ||
+            Math.abs(cached.width - pos.width) > 0.5 ||
+            Math.abs(cached.height - pos.height) > 0.5 ||
+            Math.abs(cached.zoom - currentZoom) > 0.001;
 
-        const bgRect = new Rect({
-            left: 0, top: 0,
-            width: pos.width, height: pos.height,
-            fill, stroke: "transparent",
-            originX: "left", originY: "top",
-        });
+        if (needRebuild) {
+            // 完整重建
+            this.canvas.remove(group);
+            this.objects.delete(id);
 
-        const newGroup = new Group([bgRect, ...blocks], {
-            left: pos.left, top: pos.top,
-            angle: pos.angle,
-            originX: "left", originY: "top",
-            selectable: false, evented: false,
-            excludeFromExport: true, hoverCursor: "move",
-        });
+            const { fill, stroke } = this.style;
+            const blocks = this.createBorderBlocks(pos.width, pos.height, stroke, inverseZoom);
 
-        this.metadata.set(newGroup, { category: Category.Region, id });
-        this.addObject(id, newGroup);
+            const bgRect = new Rect({
+                left: 0, top: 0,
+                width: pos.width, height: pos.height,
+                fill, stroke: "transparent",
+                originX: "left", originY: "top",
+            });
 
-        // 更新右下角标记点
+            const newGroup = new Group([bgRect, ...blocks], {
+                left: pos.left, top: pos.top,
+                angle: pos.angle,
+                originX: "left", originY: "top",
+                selectable: false, evented: false,
+                excludeFromExport: true, hoverCursor: "move",
+            });
+
+            this.metadata.set(newGroup, { category: Category.Region, id });
+            this.addObject(id, newGroup);
+
+            // 更新缓存
+            this.sizeCache.set(id, { width: pos.width, height: pos.height, zoom: currentZoom });
+        } else {
+            // 只更新位置和角度
+            group.set({ left: pos.left, top: pos.top, angle: pos.angle });
+            group.setCoords();
+        }
+
+        // 更新右下角标记点（始终需要）
         const marker = this.cornerMarkers.get(id);
         if (marker) {
             const cornerPos = this.getCornerPosition(pos);
@@ -275,31 +345,37 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
         const hPositions = calcPositions(width, hSize);
         const vPositions = calcPositions(height, vSize);
 
-        // 收集所有方块位置
-        const rects: { x: number; y: number }[] = [];
+        // 收集所有方块的 path
+        const paths: string[] = [];
 
-        // 四个角
-        rects.push({ x: 0, y: 0 });
-        rects.push({ x: width - hSize, y: 0 });
-        rects.push({ x: 0, y: height - vSize });
-        rects.push({ x: width - hSize, y: height - vSize });
+        // 缺角尺寸（矩形的一半）
+        const notchW = hSize / 2;
+        const notchH = vSize / 2;
+
+        // 四个角 - 缺角的 L 形
+        // 左上角：缺右下角
+        paths.push(`M 0 0 h ${hSize} v ${notchH} h ${-notchW} v ${notchH} h ${-notchW} Z`);
+        // 右上角：缺左下角
+        paths.push(`M ${width - hSize} 0 h ${hSize} v ${vSize} h ${-notchW} v ${-notchH} h ${-notchW} Z`);
+        // 左下角：缺右上角
+        paths.push(`M 0 ${height - vSize} h ${notchW} v ${notchH} h ${notchW} v ${notchH} h ${-hSize} Z`);
+        // 右下角：缺左上角
+        paths.push(`M ${width - notchW} ${height - vSize} h ${notchW} v ${vSize} h ${-hSize} v ${-notchH} h ${notchW} Z`);
 
         // 上边和下边（跳过两端）
         for (let i = 1; i < hPositions.length - 1; i++) {
-            rects.push({ x: hPositions[i], y: 0 });
-            rects.push({ x: hPositions[i], y: height - vSize });
+            paths.push(`M ${hPositions[i]} 0 h ${hSize} v ${vSize} h ${-hSize} Z`);
+            paths.push(`M ${hPositions[i]} ${height - vSize} h ${hSize} v ${vSize} h ${-hSize} Z`);
         }
 
         // 左边和右边（跳过两端）
         for (let i = 1; i < vPositions.length - 1; i++) {
-            rects.push({ x: 0, y: vPositions[i] });
-            rects.push({ x: width - hSize, y: vPositions[i] });
+            paths.push(`M 0 ${vPositions[i]} h ${hSize} v ${vSize} h ${-hSize} Z`);
+            paths.push(`M ${width - hSize} ${vPositions[i]} h ${hSize} v ${vSize} h ${-hSize} Z`);
         }
 
-        // 生成 SVG path 字符串：所有方块合成一个 Path
-        const pathData = rects.map(({ x, y }) =>
-            `M ${x} ${y} h ${hSize} v ${vSize} h ${-hSize} Z`
-        ).join(' ');
+        // 合成一个 Path
+        const pathData = paths.join(' ');
 
         const path = new Path(pathData, {
             fill: color,

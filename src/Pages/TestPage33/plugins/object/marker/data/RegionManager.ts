@@ -1,5 +1,5 @@
 import { Point, util, type Canvas, type FabricObject } from "fabric";
-import type { RegionData, RegionStyle } from "../types";
+import type { RegionData, RegionStyle, RenderConfig } from "../types";
 import { RegionRenderer } from "../render/RegionRenderer";
 import { genId, type ObjectMetadata, type EventBus, type HistoryManager, type HistoryRecord } from "../../../../core";
 import { RegionHistoryHandler } from "./RegionHistoryHandler";
@@ -223,13 +223,8 @@ export class RegionManager {
     };
 
     /** 同步渲染 */
-    sync = (): void => {
-        this.renderer.render(this.regions);
-    };
-
-    /** 节流同步渲染（用于 zoom 等高频场景） */
-    syncThrottled = (): void => {
-        this.renderer.render(this.regions, true);
+    sync = (config: RenderConfig = {}): void => {
+        this.renderer.sync(this.regions, config);
     };
 
     /** 置顶 */

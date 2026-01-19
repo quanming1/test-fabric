@@ -25,13 +25,13 @@ export interface PointStyle {
 /** 默认标记点样式 */
 export const DEFAULT_POINT_STYLE: PointStyle = {
     radius: 12,
-    fill: "#1890ff",
+    fill: "#7171ee",
     stroke: "#ffffff",
     strokeWidth: 2,
     textColor: "#ffffff",
     fontSize: 10,
     hoverScale: 1.2,
-    hoverFill: "#40a9ff",
+    hoverFill: "#7171ee",
 };
 
 /** 标记点内部数据 */
@@ -61,8 +61,8 @@ export interface RegionStyle {
 
 /** 默认区域样式 */
 export const DEFAULT_REGION_STYLE: RegionStyle = {
-    fill: "rgba(255, 87, 34, 0.2)",
-    stroke: "#ff5722",
+    fill: "rgba(113, 113, 238, 0.2)",
+    stroke: "#7171ee",
     strokeWidth: 2,
     rx: 4,
     ry: 4,
@@ -81,6 +81,14 @@ export interface RegionData {
 }
 
 // ─── 插件配置 ─────────────────────────────────────────
+
+/** 渲染配置 */
+export interface RenderConfig {
+    /** 只更新位置，不重建边框（用于 moving 优化） */
+    positionOnly?: boolean;
+    /** 启用节流（用于 zoom 等高频场景） */
+    throttle?: boolean;
+}
 
 /** 标记插件配置 */
 export interface MarkerPluginOptions {

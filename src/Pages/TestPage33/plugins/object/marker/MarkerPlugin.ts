@@ -241,8 +241,10 @@ export class MarkerPlugin extends BasePlugin {
         this.canvas.on("mouse:move", this.onMouseMove);
         this.canvas.on("mouse:up", this.onMouseUp);
 
-        // 对象变换：同步标记位置（不节流，需要实时跟随）
-        this.canvas.on("object:moving", this.syncAll);
+        // 对象变换：同步标记位置
+        // moving 只更新位置（positionOnly 优化）
+        this.canvas.on("object:moving", this.syncPositionOnly);
+        // scaling/rotating 需要完整重建
         this.canvas.on("object:scaling", this.syncAll);
         this.canvas.on("object:rotating", this.syncAll);
         this.canvas.on("object:modified", this.syncAll);
@@ -398,10 +400,16 @@ export class MarkerPlugin extends BasePlugin {
         this.regionManager.sync();
     };
 
+    /** 只同步位置（moving 时调用，不重建边框） */
+    private syncPositionOnly = (): void => {
+        this.pointManager.sync();
+        this.regionManager.sync({ positionOnly: true });
+    };
+
     /** 节流同步所有标记位置（zoom 等高频场景） */
     private syncAllThrottled = (): void => {
         this.pointManager.sync();
-        this.regionManager.syncThrottled();
+        this.regionManager.sync({ throttle: true });
     };
 
     /** 将所有标记置顶（图层变化后调用） */
@@ -415,7 +423,7 @@ export class MarkerPlugin extends BasePlugin {
         this.canvas.off("mouse:down", this.onMouseDown);
         this.canvas.off("mouse:move", this.onMouseMove);
         this.canvas.off("mouse:up", this.onMouseUp);
-        this.canvas.off("object:moving", this.syncAll);
+        this.canvas.off("object:moving", this.syncPositionOnly);
         this.canvas.off("object:scaling", this.syncAll);
         this.canvas.off("object:rotating", this.syncAll);
         this.canvas.off("object:modified", this.syncAll);
