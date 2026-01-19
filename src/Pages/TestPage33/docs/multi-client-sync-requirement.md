@@ -44,29 +44,45 @@
 
 同步事件采用分类型设计，通过 `eventType` 字段区分不同的事件来源和处理方式：
 
-```typescript
-// 事件类型枚举
-type SyncEventType = "client:change" | "server:add_image";
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `seq` | `number` | 否（服务端返回时有） | 全局序号，由服务端分配 |
+| `eventType` | `"client:change" \| "server:add_image"` | 是 | 事件类型 |
+| `data` | `ClientChangeData \| ServerAddImageData` | 是 | 事件数据，根据 eventType 不同而不同 |
 
-// 基础事件结构
-interface SyncEvent {
-  seq?: number;           // 全局序号，由服务端分配
-  eventType: SyncEventType;  // 事件类型
-  data: SyncEventData;    // 事件数据，根据 eventType 不同而不同
+**ClientChangeData（前端变更事件数据）：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `clientId` | `string` | 是 | 客户端唯一标识 |
+| `snapshot` | `HistoryRecord \| HistoryRecord[]` | 是 | 操作快照，单条或多条 |
+
+**ServerAddImageData（后端添加图片事件数据）：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `urls` | `string[]` | 是 | 图片 URL 数组 |
+
+**示例：**
+
+```json
+// 前端变更事件
+{
+  "seq": 101,
+  "eventType": "client:change",
+  "data": {
+    "clientId": "a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6",
+    "snapshot": {}
+  }
 }
 
-// 事件数据类型（联合类型）
-type SyncEventData = ClientChangeData | ServerAddImageData;
-
-// 前端变更事件数据
-interface ClientChangeData {
-  clientId: string;
-  snapshot: HistoryRecord | HistoryRecord[];
-}
-
-// 后端添加图片事件数据
-interface ServerAddImageData {
-  urls: string[];  // 图片 URL 数组
+// 后端添加图片事件
+{
+  "seq": 102,
+  "eventType": "server:add_image",
+  "data": {
+    "urls": ["http://localhost:3001/uploads/xxx.png"]
+  }
 }
 ```
 
@@ -76,31 +92,6 @@ interface ServerAddImageData {
 |-----------|------|-----------|
 | `client:change` | 前端客户端发起的画布变更 | `{ clientId, snapshot }` |
 | `server:add_image` | 后端主动添加图片 | `{ urls: string[] }` |
-
-**示例 - 前端变更事件：**
-
-```json
-{
-  "seq": 101,
-  "eventType": "client:change",
-  "data": {
-    "clientId": "a1b2c3d4-e5f6-7g8h-9i0j-k1l2m3n4o5p6",
-    "snapshot": { ... }
-  }
-}
-```
-
-**示例 - 后端添加图片事件：**
-
-```json
-{
-  "seq": 102,
-  "eventType": "server:add_image",
-  "data": {
-    "urls": ["http://localhost:3001/uploads/xxx.png"]
-  }
-}
-```
 
 **设计优势：**
 

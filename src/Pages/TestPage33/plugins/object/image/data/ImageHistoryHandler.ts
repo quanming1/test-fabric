@@ -1,20 +1,10 @@
-import { type FabricObject } from "fabric";
+import { type FabricObject, util } from "fabric";
 import { BaseHistoryHandler, Category, type HistoryRecord, type ObjectSnapshot, type HistoryManager, type CanvasEditor } from "../../../../core";
-import type { PointData, RegionData } from "../../marker/types";
 import { ImageFactory } from "../helper";
-import { EXTRA_PROPS } from "../types";
+import { EXTRA_PROPS, type TransformMatrix, type ImageSnapshotData } from "../types";
 
 // 前向声明，避免循环依赖
 import type { ImageManager } from "./ImageManager";
-
-/** MarkerPlugin 需要的方法接口 */
-interface MarkerPluginApi {
-    getMarkersForTarget(targetId: string): { points: PointData[]; regions: RegionData[] };
-    getPointsData(): PointData[];
-    getRegionsData(): RegionData[];
-    loadPoints(data: PointData[]): void;
-    loadRegions(data: RegionData[]): void;
-}
 
 export interface ImageHistoryHandlerOptions {
     editor: CanvasEditor;
@@ -49,29 +39,34 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
         this.manager = options.manager;
     }
 
-    private get markerPlugin(): MarkerPluginApi | null {
-        return (this.editor.getPlugin("marker") as unknown as MarkerPluginApi) ?? null;
-    }
-
     // ─── 快照 ─────────────────────────────────────────
 
-    createSnapshot(obj: FabricObject, includeMarkers = false): ObjectSnapshot {
+    /**
+     * 创建轻量快照（仅矩阵）
+     * 用于 modify 操作，大幅减少内存占用
+     */
+    createLightSnapshot(obj: FabricObject): ObjectSnapshot {
         const id = this.editor.metadata.get(obj)?.id ?? "";
-        const data: Record<string, unknown> = {
-            ...obj.toObject([...EXTRA_PROPS]),
-        };
+        const matrix = obj.calcTransformMatrix() as TransformMatrix;
+        const data: ImageSnapshotData = { matrix };
+        return { id, data };
+    }
 
-        if (includeMarkers && id) {
-            const markerData = this.markerPlugin?.getMarkersForTarget(id);
-            if (markerData) {
-                if (markerData.points.length > 0) {
-                    data._markers = markerData.points;
-                }
-                if (markerData.regions.length > 0) {
-                    data._regions = markerData.regions;
-                }
-            }
-        }
+    /**
+     * 创建完整快照
+     * 用于 add/remove 操作，包含恢复所需的全部信息
+     */
+    createSnapshot(obj: FabricObject): ObjectSnapshot {
+        const id = this.editor.metadata.get(obj)?.id ?? "";
+        const matrix = obj.calcTransformMatrix() as TransformMatrix;
+
+        // 获取 src 和 objectData
+        const fullData = obj.toObject([...EXTRA_PROPS]);
+        const data: ImageSnapshotData = {
+            matrix,
+            src: fullData.src as string,
+            objectData: fullData.data,
+        };
 
         return { id, data };
     }
@@ -85,7 +80,8 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
             if (!this.editor.metadata.is(obj, "category", Category.Image)) continue;
             const id = this.editor.metadata.get(obj)?.id;
             if (id) {
-                this.transformStartSnapshots.set(id, this.createSnapshot(obj));
+                // 使用轻量快照
+                this.transformStartSnapshots.set(id, this.createLightSnapshot(obj));
             }
         }
     }
@@ -108,7 +104,8 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
             const beforeSnapshot = this.transformStartSnapshots.get(id);
             if (beforeSnapshot) {
                 beforeSnapshots.push(beforeSnapshot);
-                afterSnapshots.push(this.createSnapshot(obj));
+                // 使用轻量快照
+                afterSnapshots.push(this.createLightSnapshot(obj));
                 objectIds.push(id);
             }
         }
@@ -157,7 +154,7 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
             const id = this.editor.metadata.get(obj)?.id;
             if (id) {
                 objectIds.push(id);
-                beforeSnapshots.push(this.createSnapshot(obj, true));
+                beforeSnapshots.push(this.createSnapshot(obj));
             }
         }
 
@@ -219,7 +216,40 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
      */
     private async restoreImages(snapshots: ObjectSnapshot[]): Promise<void> {
         for (const snapshot of snapshots) {
-            const img = await ImageFactory.fromSnapshot(snapshot.data);
+            const data = snapshot.data as ImageSnapshotData;
+
+            if (!data.src) {
+                console.warn(`[ImageHistoryHandler] 快照缺少 src，无法恢复: ${snapshot.id}`);
+                continue;
+            }
+
+            // 从 src 创建图片
+            const img = await ImageFactory.fromUrl(data.src);
+
+            // 设置 center origin（与 ImageRenderer 保持一致）
+            img.set({
+                originX: "center",
+                originY: "center",
+            });
+
+            // 从矩阵恢复变换
+            if (data.matrix) {
+                const options = util.qrDecompose(data.matrix);
+                img.set({
+                    scaleX: options.scaleX,
+                    scaleY: options.scaleY,
+                    skewX: options.skewX,
+                    skewY: options.skewY,
+                    angle: options.angle,
+                    left: options.translateX,
+                    top: options.translateY,
+                });
+            }
+
+            // 恢复对象元数据
+            if (data.objectData) {
+                img.set("data", data.objectData);
+            }
 
             // 通过 manager.add 添加，不记录历史
             this.manager.add(img, {
@@ -228,46 +258,42 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
                 needSync: false,
                 setActive: false,
             });
-
-            // 恢复关联的标记数据
-            this.restoreMarkers(snapshot);
-        }
-    }
-
-    /**
-     * 恢复关联的标记数据
-     */
-    private restoreMarkers(snapshot: ObjectSnapshot): void {
-        const markerPlugin = this.markerPlugin;
-        if (!markerPlugin) return;
-
-        const markers = snapshot.data._markers as PointData[] | undefined;
-        const regions = snapshot.data._regions as RegionData[] | undefined;
-
-        if (markers && markers.length > 0) {
-            markerPlugin.loadPoints([
-                ...markerPlugin.getPointsData(),
-                ...markers,
-            ]);
-        }
-        if (regions && regions.length > 0) {
-            markerPlugin.loadRegions([
-                ...markerPlugin.getRegionsData(),
-                ...regions,
-            ]);
         }
     }
 
     /**
      * 应用快照到现有图片（用于 modify 的撤销/重做）
+     * 支持轻量快照（仅矩阵）和完整快照
+     * 
+     * 注意：图片使用 originX='center', originY='center'
+     * qrDecompose 的 translateX/translateY 就是中心点坐标，即 left/top
      */
     private applySnapshots(snapshots: ObjectSnapshot[]): void {
         for (const snapshot of snapshots) {
             const obj = this.manager.getById(snapshot.id);
-            if (obj) {
-                obj.set(snapshot.data as any);
-                obj.setCoords();
+            if (!obj) continue;
+
+            const data = snapshot.data as ImageSnapshotData;
+
+            if (data.matrix) {
+                // 从矩阵恢复变换
+                const options = util.qrDecompose(data.matrix);
+
+                // 图片使用 center origin，translateX/translateY 就是 left/top
+                obj.set({
+                    flipX: false,
+                    flipY: false,
+                    scaleX: options.scaleX,
+                    scaleY: options.scaleY,
+                    skewX: options.skewX,
+                    skewY: options.skewY,
+                    angle: options.angle,
+                    left: options.translateX,
+                    top: options.translateY,
+                });
             }
+
+            obj.setCoords();
         }
         this.editor.canvas.requestRenderAll();
     }

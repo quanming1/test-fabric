@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多端画布同步流程演示</title>
+    <link rel="stylesheet" href="sync-flow-demo.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🎨 多端画布同步流程演示</h1>
+            <p class="subtitle">点击"下一步"按钮，逐步了解同步机制的工作原理</p>
+        </header>
+
+        <div class="controls">
+            <button id="prevBtn" class="btn btn-secondary" disabled>⬅ 上一步</button>
+            <span class="step-indicator">
+                <span id="currentStep">0</span> / <span id="totalSteps">0</span>
+            </span>
+            <button id="nextBtn" class="btn btn-primary">下一步 ➡</button>
+            <button id="resetBtn" class="btn btn-outline">🔄 重置</button>
+        </div>
+
+        <div class="phase-tabs">
+            <button class="phase-tab active" data-phase="init">1. 初始化</button>
+            <button class="phase-tab" data-phase="sync">2. 操作同步</button>
+            <button class="phase-tab" data-phase="undo">3. 撤销重做</button>
+            <button class="phase-tab" data-phase="full">4. 全量同步</button>
+        </div>
+
+        <div class="main-content">
+            <div class="diagram-area">
+                <!-- 客户端A -->
+                <div class="client client-a" id="clientA">
+                    <div class="client-header">
+                        <span class="client-icon">💻</span>
+                        <span class="client-name">客户端 A</span>
+                        <span class="client-id">ID: a1b2c3d4</span>
+                    </div>
+                    <div class="client-body">
+                        <div class="canvas-preview" id="canvasA">
+                            <div class="canvas-label">画布</div>
+                            <div class="canvas-objects" id="objectsA"></div>
+                        </div>
+                        <div class="history-stack" id="historyA">
+                            <div class="stack-label">历史栈</div>
+                            <div class="stack-items" id="historyItemsA"></div>
+                        </div>
+                    </div>
+                    <div class="client-status" id="statusA">等待初始化...</div>
+                </div>
+
+                <!-- 服务端 -->
+                <div class="server" id="server">
+                    <div class="server-header">
+                        <span class="server-icon">🖥️</span>
+                        <span class="server-name">服务端</span>
+                    </div>
+                    <div class="server-body">
+                        <div class="data-store">
+                            <div class="store-label">全量数据</div>
+                            <div class="store-content" id="fullData">null</div>
+                        </div>
+                        <div class="event-queue">
+                            <div class="queue-label">事件队列</div>
+                            <div class="queue-items" id="eventQueue"></div>
+                            <div class="queue-count">长度: <span id="queueLength">0</span></div>
+                        </div>
+                        <div class="sse-connections">
+                            <div class="sse-label">SSE 连接</div>
+                            <div class="sse-list" id="sseList"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 客户端C -->
+                <div class="client client-c" id="clientC">
+                    <div class="client-header">
+                        <span class="client-icon">💻</span>
+                        <span class="client-name">客户端 C</span>
+                        <span class="client-id">ID: x9y8z7w6</span>
+                    </div>
+                    <div class="client-body">
+                        <div class="canvas-preview" id="canvasC">
+                            <div class="canvas-label">画布</div>
+                            <div class="canvas-objects" id="objectsC"></div>
+                        </div>
+                        <div class="history-stack" id="historyC">
+                            <div class="stack-label">历史栈</div>
+                            <div class="stack-items" id="historyItemsC"></div>
+                        </div>
+                    </div>
+                    <div class="client-status" id="statusC">等待初始化...</div>
+                </div>
+
+                <!-- 数据流动画 -->
+                <div class="data-flow" id="dataFlow"></div>
+            </div>
+
+            <div class="description-panel">
+                <div class="step-title" id="stepTitle">欢迎</div>
+                <div class="step-description" id="stepDescription">
+                    点击"下一步"开始了解多端画布同步的工作流程。
+                </div>
+                <div class="code-preview" id="codePreview"></div>
+            </div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <span class="legend-color" style="background: #4CAF50;"></span>
+                <span>HTTP 请求</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #2196F3;"></span>
+                <span>HTTP 响应</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #FF9800;"></span>
+                <span>SSE 推送</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #9C27B0;"></span>
+                <span>本地操作</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="sync-flow-demo.js"></script>
+</body>
+
+</html>

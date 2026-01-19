@@ -1,3 +1,5 @@
+import { type ObjectData } from "../../../core";
+
 /** 图片内部数据（序列化用） */
 export interface ImageData {
     id: string;
@@ -14,6 +16,25 @@ export interface ImageData {
 
 /** 图片需要额外序列化的属性 */
 export const EXTRA_PROPS = ["data", "src", "crossOrigin"] as const;
+
+// ─── 轻量快照类型 ─────────────────────────────────────────
+
+/** 变换矩阵类型 [a, b, c, d, e, f] */
+export type TransformMatrix = [number, number, number, number, number, number];
+
+/**
+ * 图片轻量快照数据
+ * - modify 操作：只存 matrix
+ * - add/remove 操作：存完整信息
+ */
+export interface ImageSnapshotData extends Record<string, unknown> {
+    /** 变换矩阵（必须） */
+    matrix: TransformMatrix;
+    /** 图片源（add/remove 时需要） */
+    src?: string;
+    /** 对象元数据（add/remove 时需要） */
+    objectData?: ObjectData;
+}
 
 // ─── 图片样式配置 ─────────────────────────────────────────
 
