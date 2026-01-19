@@ -57,33 +57,66 @@ export class RegionManager {
     /** 开始绘制区域 */
     startDraw(target: FabricObject, targetId: string, scenePt: { x: number; y: number }): void {
         this.isDrawing = true;
-        this.drawStartX = scenePt.x;
-        this.drawStartY = scenePt.y;
         this.drawTarget = target;
         this.drawTargetId = targetId;
 
-        this.renderer.createPreview(scenePt);
+        // 裁剪起点到目标边界内
+        const clampedPt = this.clampToTargetBounds(target, scenePt);
+        this.drawStartX = clampedPt.x;
+        this.drawStartY = clampedPt.y;
+
+        this.renderer.createPreview(clampedPt);
     }
 
     /** 更新绘制预览 */
     updateDraw(scenePt: { x: number; y: number }): void {
-        if (!this.isDrawing) return;
-        this.renderer.updatePreview({ x: this.drawStartX, y: this.drawStartY }, scenePt);
+        if (!this.isDrawing || !this.drawTarget) return;
+
+        // 将场景坐标裁剪到目标边界内
+        const clampedPt = this.clampToTargetBounds(this.drawTarget, scenePt);
+        const clampedStart = this.clampToTargetBounds(this.drawTarget, { x: this.drawStartX, y: this.drawStartY });
+
+        this.renderer.updatePreview(clampedStart, clampedPt);
+    }
+
+    /** 将场景坐标裁剪到目标对象边界内 */
+    private clampToTargetBounds(target: FabricObject, scenePt: { x: number; y: number }): { x: number; y: number } {
+        const w = target.width ?? 0;
+        const h = target.height ?? 0;
+        if (!w || !h) return scenePt;
+
+        const inv = util.invertTransform(target.calcTransformMatrix());
+        const localPt = new Point(scenePt.x, scenePt.y).transform(inv);
+
+        // 裁剪到目标本地坐标范围 [-w/2, w/2] x [-h/2, h/2]
+        const clampedLocalX = Math.max(-w / 2, Math.min(w / 2, localPt.x));
+        const clampedLocalY = Math.max(-h / 2, Math.min(h / 2, localPt.y));
+
+        // 转换回场景坐标
+        const matrix = target.calcTransformMatrix();
+        const clampedScene = new Point(clampedLocalX, clampedLocalY).transform(matrix);
+
+        return { x: clampedScene.x, y: clampedScene.y };
     }
 
     /** 结束绘制，返回是否为拖动 */
     endDraw(scenePt: { x: number; y: number }): boolean {
         if (!this.isDrawing) return false;
 
-        const dx = Math.abs(scenePt.x - this.drawStartX);
-        const dy = Math.abs(scenePt.y - this.drawStartY);
+        // 裁剪终点到目标边界内
+        const clampedPt = this.drawTarget
+            ? this.clampToTargetBounds(this.drawTarget, scenePt)
+            : scenePt;
+
+        const dx = Math.abs(clampedPt.x - this.drawStartX);
+        const dy = Math.abs(clampedPt.y - this.drawStartY);
 
         this.renderer.removePreview();
 
         const isDrag = dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD;
 
         if (isDrag && this.drawTarget && this.drawTargetId) {
-            this.add(this.drawTarget, this.drawTargetId, { x: this.drawStartX, y: this.drawStartY }, scenePt);
+            this.add(this.drawTarget, this.drawTargetId, { x: this.drawStartX, y: this.drawStartY }, clampedPt);
         }
 
         this.isDrawing = false;
@@ -106,7 +139,7 @@ export class RegionManager {
         startPt: { x: number; y: number },
         endPt: { x: number; y: number }
     ): RegionData | null {
-        const w = target.width ?? 0; + w / 2
+        const w = target.width ?? 0;
         const h = target.height ?? 0;
         if (!w || !h) return null;
 
@@ -114,10 +147,17 @@ export class RegionManager {
         const localStart = new Point(startPt.x, startPt.y).transform(inv);
         const localEnd = new Point(endPt.x, endPt.y).transform(inv);
 
-        const x1 = (localStart.x + w / 2) / w;
-        const y1 = (localStart.y + h / 2) / h;
-        const x2 = (localEnd.x + w / 2) / w;
-        const y2 = (localEnd.y + h / 2) / h;
+        // 计算归一化坐标
+        let x1 = (localStart.x + w / 2) / w;
+        let y1 = (localStart.y + h / 2) / h;
+        let x2 = (localEnd.x + w / 2) / w;
+        let y2 = (localEnd.y + h / 2) / h;
+
+        // 裁剪到 [0, 1] 范围，确保不超出目标边界
+        x1 = Math.max(0, Math.min(1, x1));
+        y1 = Math.max(0, Math.min(1, y1));
+        x2 = Math.max(0, Math.min(1, x2));
+        y2 = Math.max(0, Math.min(1, y2));
 
         const nx = Math.min(x1, x2);
         const ny = Math.min(y1, y2);
@@ -184,7 +224,12 @@ export class RegionManager {
 
     /** 同步渲染 */
     sync = (): void => {
-        this.renderer.sync(this.regions);
+        this.renderer.render(this.regions);
+    };
+
+    /** 节流同步渲染（用于 zoom 等高频场景） */
+    syncThrottled = (): void => {
+        this.renderer.render(this.regions, true);
     };
 
     /** 置顶 */

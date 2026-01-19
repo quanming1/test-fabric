@@ -241,7 +241,7 @@ export class MarkerPlugin extends BasePlugin {
         this.canvas.on("mouse:move", this.onMouseMove);
         this.canvas.on("mouse:up", this.onMouseUp);
 
-        // 对象变换：同步标记位置
+        // 对象变换：同步标记位置（不节流，需要实时跟随）
         this.canvas.on("object:moving", this.syncAll);
         this.canvas.on("object:scaling", this.syncAll);
         this.canvas.on("object:rotating", this.syncAll);
@@ -250,8 +250,9 @@ export class MarkerPlugin extends BasePlugin {
         // 对象删除：清理关联标记
         this.canvas.on("object:removed", this.onObjectRemoved);
 
-        // 缩放/图层变化：同步标记位置和层级
-        this.eventBus.on("zoom:change", this.syncAll);
+        // 缩放变化：节流同步（高频场景）
+        this.eventBus.on("zoom:change", this.syncAllThrottled);
+        // 图层变化：置顶标记
         this.eventBus.on("layer:change", this.bringAllToFront);
 
         // 辅助线吸附：同步标记位置（吸附修正发生在 object:moving 之后）
@@ -397,6 +398,12 @@ export class MarkerPlugin extends BasePlugin {
         this.regionManager.sync();
     };
 
+    /** 节流同步所有标记位置（zoom 等高频场景） */
+    private syncAllThrottled = (): void => {
+        this.pointManager.sync();
+        this.regionManager.syncThrottled();
+    };
+
     /** 将所有标记置顶（图层变化后调用） */
     private bringAllToFront = (): void => {
         this.regionManager.bringToFront();
@@ -415,7 +422,7 @@ export class MarkerPlugin extends BasePlugin {
         this.canvas.off("object:removed", this.onObjectRemoved);
 
         // 移除事件总线订阅
-        this.eventBus.off("zoom:change", this.syncAll);
+        this.eventBus.off("zoom:change", this.syncAllThrottled);
         this.eventBus.off("layer:change", this.bringAllToFront);
         this.eventBus.off("guideline:snap", this.syncAll);
         this.eventBus.off("mode:change", this.onModeChange);
