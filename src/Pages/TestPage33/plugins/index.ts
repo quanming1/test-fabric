@@ -27,3 +27,7 @@ export type { ExportOptions, ImportOptions, CanvasJSON, IOEvents } from "./io";
 // Guidelines
 export { GuidelinesPlugin } from "./guidelines";
 export type { GuidelinesPluginOptions, GuidelinesStyle, Guideline } from "./guidelines";
+
+// Controls
+export { ControlsPlugin } from "./controls";
+export type { ControlsStyle, ControlsPluginOptions } from "./controls";

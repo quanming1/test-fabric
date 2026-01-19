@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ZoomPlugin, SelectionPlugin, MarkerPlugin, ModePlugin, DrawPlugin, ImagePlugin, ImportExportPlugin, GuidelinesPlugin } from "../plugins";
+import { ZoomPlugin, SelectionPlugin, MarkerPlugin, ModePlugin, DrawPlugin, ImagePlugin, ImportExportPlugin, GuidelinesPlugin, ControlsPlugin } from "../plugins";
 import { CanvasEditor, Category } from "../core";
 
 export interface UseCanvasEditorReturn {
@@ -38,6 +38,9 @@ export function useCanvasEditor(
       .use(new ImportExportPlugin())
       .use(new GuidelinesPlugin({
         allowedCategories: [Category.DrawRect, Category.Image],
+      }))
+      .use(new ControlsPlugin({
+        lockAspectRatio: true,
       }));
 
     // 响应式尺寸
