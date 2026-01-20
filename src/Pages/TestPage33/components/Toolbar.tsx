@@ -9,6 +9,7 @@ import {
   GatewayOutlined,
   DownloadOutlined,
   UploadOutlined,
+  ExportOutlined,
 } from "@ant-design/icons";
 import type { ModePlugin } from "../plugins/mode/ModePlugin";
 import type { MarkerPlugin } from "../plugins/object/marker/MarkerPlugin";
@@ -119,6 +120,28 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     editor?.getPlugin<ImportExportPlugin>("io")?.import();
   };
 
+  /** 导出选中图片及标记 */
+  const handleExportImage = async () => {
+    const imagePlugin = editor?.getPlugin<ImagePlugin>("image");
+    if (!imagePlugin) return;
+
+    // 获取当前选中的图片
+    const activeObj = editor?.canvas.getActiveObject();
+    const imageId = activeObj ? editor?.metadata.getField(activeObj, "id") : null;
+    if (!imageId) {
+      console.warn("请先选中一张图片");
+      return;
+    }
+
+    const result = await imagePlugin.exportWithMarkers(imageId);
+    if (result) {
+      const link = document.createElement("a");
+      link.href = result.dataUrl;
+      link.download = `export_${imageId}.png`;
+      link.click();
+    }
+  };
+
   // ============ 工具栏配置 ============
   /**
    * 工具按钮分组配置
@@ -148,6 +171,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
           icon: <UploadOutlined />,
           tooltip: "导入 JSON",
           onClick: handleImport,
+        },
+        {
+          key: "export-image",
+          icon: <ExportOutlined />,
+          tooltip: "导出选中图片（含标记）",
+          onClick: handleExportImage,
         },
       ],
       // 第三组：危险操作

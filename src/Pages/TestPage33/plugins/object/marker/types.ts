@@ -61,7 +61,7 @@ export interface RegionStyle {
 
 /** 默认区域样式 */
 export const DEFAULT_REGION_STYLE: RegionStyle = {
-    fill: "rgba(113, 113, 238, 0.2)",
+    fill: "transparent",
     stroke: "#7171ee",
     strokeWidth: 2,
     rx: 4,

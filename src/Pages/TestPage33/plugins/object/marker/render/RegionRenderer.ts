@@ -157,10 +157,16 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
         const currentZoom = this.getZoom();
 
         // 判断是否需要重建边框
-        const needRebuild = !positionOnly || !cached ||
+        // 1. 没有缓存（首次）
+        // 2. 尺寸变化（scaling）
+        // 3. zoom 变化（需要重新计算方块大小和间距）
+        const sizeChanged = !cached ||
             Math.abs(cached.width - pos.width) > 0.5 ||
-            Math.abs(cached.height - pos.height) > 0.5 ||
-            Math.abs(cached.zoom - currentZoom) > 0.001;
+            Math.abs(cached.height - pos.height) > 0.5;
+        const zoomChanged = !cached || Math.abs(cached.zoom - currentZoom) > 0.001;
+
+        // positionOnly 模式下只在尺寸或 zoom 变化时重建，否则总是重建
+        const needRebuild = positionOnly ? (sizeChanged || zoomChanged) : (sizeChanged || zoomChanged || !cached);
 
         if (needRebuild) {
             // 完整重建
@@ -312,21 +318,27 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
      * 创建边框小方块
      * 算法：四角固定放方块，中间根据剩余空间均匀填充
      * 优化：使用单个 Path 绘制所有方块，减少对象数量
+     * 
+     * ⚠️ 修改此方法时，需同步修改 MarkerExportPainter.drawRegionBorder()
+     * 
+     * @param width 区域宽度（场景坐标）
+     * @param height 区域高度（场景坐标）
+     * @param color 方块颜色
+     * @param inverseZoom 缩放倒数，用于保持方块在屏幕上的固定大小
      */
     private createBorderBlocks(width: number, height: number, color: string, inverseZoom: number): Path[] {
-        console.log('[RegionRenderer] createBorderBlocks', { width, height, inverseZoom });
-
-        const targetSize = TARGET_BLOCK_SIZE * inverseZoom;
-        const targetGap = TARGET_GAP * inverseZoom;
+        // 方块大小和间距在屏幕上保持固定（乘以 inverseZoom 转换到场景坐标）
+        const blockSize = TARGET_BLOCK_SIZE * inverseZoom;
+        const blockGap = TARGET_GAP * inverseZoom;
 
         // 计算一条边上的方块位置（两端固定在 0 和 length-size，中间均匀分布）
-        const calcPositions = (length: number, size: number): number[] => {
+        const calcPositions = (length: number, size: number, gap: number): number[] => {
             const endPos = length - size;
             if (endPos <= 0) return [0];
 
             const positions = [0];
             const innerSpace = endPos;
-            const minSpacing = size + targetGap;
+            const minSpacing = size + gap;
             const innerCount = Math.max(0, Math.floor((innerSpace - minSpacing) / minSpacing));
 
             if (innerCount > 0) {
@@ -340,38 +352,36 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
             return positions;
         };
 
-        const hSize = targetSize;
-        const vSize = targetSize;
-        const hPositions = calcPositions(width, hSize);
-        const vPositions = calcPositions(height, vSize);
+        const hPositions = calcPositions(width, blockSize, blockGap);
+        const vPositions = calcPositions(height, blockSize, blockGap);
 
         // 收集所有方块的 path
         const paths: string[] = [];
 
         // 缺角尺寸（矩形的一半）
-        const notchW = hSize / 2;
-        const notchH = vSize / 2;
+        const notchW = blockSize / 2;
+        const notchH = blockSize / 2;
 
         // 四个角 - 缺角的 L 形
         // 左上角：缺右下角
-        paths.push(`M 0 0 h ${hSize} v ${notchH} h ${-notchW} v ${notchH} h ${-notchW} Z`);
+        paths.push(`M 0 0 h ${blockSize} v ${notchH} h ${-notchW} v ${notchH} h ${-notchW} Z`);
         // 右上角：缺左下角
-        paths.push(`M ${width - hSize} 0 h ${hSize} v ${vSize} h ${-notchW} v ${-notchH} h ${-notchW} Z`);
+        paths.push(`M ${width - blockSize} 0 h ${blockSize} v ${blockSize} h ${-notchW} v ${-notchH} h ${-notchW} Z`);
         // 左下角：缺右上角
-        paths.push(`M 0 ${height - vSize} h ${notchW} v ${notchH} h ${notchW} v ${notchH} h ${-hSize} Z`);
+        paths.push(`M 0 ${height - blockSize} h ${notchW} v ${notchH} h ${notchW} v ${notchH} h ${-blockSize} Z`);
         // 右下角：缺左上角
-        paths.push(`M ${width - notchW} ${height - vSize} h ${notchW} v ${vSize} h ${-hSize} v ${-notchH} h ${notchW} Z`);
+        paths.push(`M ${width - notchW} ${height - blockSize} h ${notchW} v ${blockSize} h ${-blockSize} v ${-notchH} h ${notchW} Z`);
 
         // 上边和下边（跳过两端）
         for (let i = 1; i < hPositions.length - 1; i++) {
-            paths.push(`M ${hPositions[i]} 0 h ${hSize} v ${vSize} h ${-hSize} Z`);
-            paths.push(`M ${hPositions[i]} ${height - vSize} h ${hSize} v ${vSize} h ${-hSize} Z`);
+            paths.push(`M ${hPositions[i]} 0 h ${blockSize} v ${blockSize} h ${-blockSize} Z`);
+            paths.push(`M ${hPositions[i]} ${height - blockSize} h ${blockSize} v ${blockSize} h ${-blockSize} Z`);
         }
 
         // 左边和右边（跳过两端）
         for (let i = 1; i < vPositions.length - 1; i++) {
-            paths.push(`M 0 ${vPositions[i]} h ${hSize} v ${vSize} h ${-hSize} Z`);
-            paths.push(`M ${width - hSize} ${vPositions[i]} h ${hSize} v ${vSize} h ${-hSize} Z`);
+            paths.push(`M 0 ${vPositions[i]} h ${blockSize} v ${blockSize} h ${-blockSize} Z`);
+            paths.push(`M ${width - blockSize} ${vPositions[i]} h ${blockSize} v ${blockSize} h ${-blockSize} Z`);
         }
 
         // 合成一个 Path

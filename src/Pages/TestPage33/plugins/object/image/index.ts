@@ -8,4 +8,5 @@ export { ImageManager, ImageHistoryHandler } from "./data";
 export { ImageRenderer } from "./render";
 
 // 工具层
-export { ImageFactory } from "./helper";
+export { ImageFactory, ImageExportHandler } from "./helper";
+export type { ExportOptions, ExportResult, MarkerDataForExport } from "./helper";

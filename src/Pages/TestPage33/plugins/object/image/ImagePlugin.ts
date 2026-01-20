@@ -4,6 +4,7 @@ import { Category, type HistoryRecord } from "../../../core";
 import { EditorMode } from "../../mode/ModePlugin";
 import { ImageManager } from "./data/ImageManager";
 import { ImageLabelRenderer } from "./render/ImageLabelRenderer";
+import { ImageExportHandler, type ExportOptions, type ExportResult } from "./helper";
 
 /**
  * 图片插件
@@ -30,10 +31,13 @@ export class ImagePlugin extends BasePlugin {
   private manager!: ImageManager;
   /** 标签渲染器 - 负责选中图片上方的浮动标签 */
   private labelRenderer!: ImageLabelRenderer;
+  /** 导出处理器 - 负责图片+标记的合成导出 */
+  private exportHandler!: ImageExportHandler;
 
   protected onInstall(): void {
     this.manager = new ImageManager({ editor: this.editor });
     this.labelRenderer = new ImageLabelRenderer(this.canvas, this.editor.metadata);
+    this.exportHandler = new ImageExportHandler(this.canvas, this.editor.metadata);
 
     this.bindCanvasEvents();
     this.bindEditorEvents();
@@ -212,6 +216,23 @@ export class ImagePlugin extends BasePlugin {
    */
   async addImageFromUrl(url: string): Promise<FabricImage | null> {
     return this.manager.addFromUrl(url);
+  }
+
+  // ─── 导出 API ─────────────────────────────────────────
+
+  /**
+   * 导出图片及其标记
+   * @param imageId 图片 ID
+   * @param options 导出配置
+   */
+  async exportWithMarkers(
+    imageId: string,
+    options?: ExportOptions
+  ): Promise<ExportResult | null> {
+    const markerPlugin = this.editor.getPlugin<any>("marker");
+    // 使用 getMarkersForExport 获取带全局序号的标记数据
+    const markers = markerPlugin?.getMarkersForExport(imageId) ?? { points: [], regions: [] };
+    return this.exportHandler.exportWithMarkers(imageId, markers, options);
   }
 
   // ─── 模式切换 ─────────────────────────────────────────

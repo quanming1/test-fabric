@@ -188,6 +188,29 @@ export class MarkerPlugin extends BasePlugin {
     }
 
     /**
+     * 获取目标对象关联的标记数据（带全局序号）
+     * 用于导出时保持序号与画布显示一致
+     */
+    getMarkersForExport(targetId: string): {
+        points: Array<PointData & { index: number }>;
+        regions: Array<RegionData & { index: number }>;
+    } {
+        const allPoints = this.pointManager.rawData;
+        const allRegions = this.regionManager.data;
+
+        // 过滤出目标对象的标记，并附带全局 index
+        const points = allPoints
+            .map((p, index) => ({ ...p, index }))
+            .filter(p => p.targetId === targetId);
+
+        const regions = allRegions
+            .map((r, index) => ({ ...r, index }))
+            .filter(r => r.targetId === targetId);
+
+        return { points, regions };
+    }
+
+    /**
      * 删除目标对象关联的所有标记
      * @param ids 目标对象 ID 列表
      * @param recordHistory 是否记录历史
