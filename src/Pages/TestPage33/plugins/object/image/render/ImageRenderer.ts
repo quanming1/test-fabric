@@ -10,6 +10,12 @@ export interface ImageRenderData {
     obj: FabricObject;
 }
 
+/** Hover 边框样式配置 */
+const HOVER_BORDER_STYLE = {
+    stroke: "#7171ee",
+    strokeWidth: 2,
+};
+
 /**
  * 图片渲染器
  * 继承 BaseRenderer，管理图片对象的渲染状态、交互配置
@@ -19,9 +25,66 @@ export interface ImageRenderData {
  */
 export class ImageRenderer extends BaseRenderer<ImageRenderData, ImageStyle, FabricObject> {
     private currentMode: EditorMode = EditorMode.Select;
+    private hoveredObject: FabricObject | null = null;
+    private hoverHandlersBound = false;
 
     constructor(canvas: Canvas, metadata: ObjectMetadata, style: Partial<ImageStyle> = {}) {
         super(canvas, metadata, DEFAULT_IMAGE_STYLE, style);
+        this.bindHoverHandlers();
+    }
+
+    /** 绑定 hover 事件处理 */
+    private bindHoverHandlers(): void {
+        if (this.hoverHandlersBound) return;
+
+        this.canvas.on("mouse:over", (e) => {
+            const target = e.target;
+            if (!target || !this.isImageObject(target)) return;
+            // active 状态不加 hover 边框
+            if (this.canvas.getActiveObject() === target) return;
+
+            this.hoveredObject = target;
+            target.set({
+                stroke: HOVER_BORDER_STYLE.stroke,
+                strokeWidth: HOVER_BORDER_STYLE.strokeWidth,
+            });
+            this.canvas.requestRenderAll();
+        });
+
+        this.canvas.on("mouse:out", (e) => {
+            const target = e.target;
+            if (!target || target !== this.hoveredObject) return;
+
+            target.set({
+                stroke: undefined,
+                strokeWidth: 0,
+            });
+            this.hoveredObject = null;
+            this.canvas.requestRenderAll();
+        });
+
+        // 选中时立即移除 hover 边框
+        const clearHoverBorder = (target: FabricObject | undefined) => {
+            if (target && target === this.hoveredObject) {
+                target.set({
+                    stroke: undefined,
+                    strokeWidth: 0,
+                });
+                this.hoveredObject = null;
+                this.canvas.requestRenderAll();
+            }
+        };
+
+        this.canvas.on("selection:created", (e) => clearHoverBorder(e.selected?.[0]));
+        this.canvas.on("selection:updated", (e) => clearHoverBorder(e.selected?.[0]));
+
+        this.hoverHandlersBound = true;
+    }
+
+    /** 判断对象是否为图片 */
+    private isImageObject(obj: FabricObject): boolean {
+        const meta = this.metadata.get(obj);
+        return meta?.category === Category.Image;
     }
 
     protected getDataId(data: ImageRenderData): string {
