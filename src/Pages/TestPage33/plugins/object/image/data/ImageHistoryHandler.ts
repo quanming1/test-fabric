@@ -1,7 +1,7 @@
 import { type FabricObject, util } from "fabric";
-import { BaseHistoryHandler, Category, type HistoryRecord, type ObjectSnapshot, type HistoryManager, type CanvasEditor } from "../../../../core";
+import { BaseHistoryHandler, Category, type HistoryRecord, type ObjectSnapshot, type HistoryManager, type CanvasEditor, type ImageObjectData } from "../../../../core";
 import { ImageFactory } from "../helper";
-import { EXTRA_PROPS, type TransformMatrix, type ImageSnapshotData } from "../types";
+import type { ImageExportData, StyleData } from "../../../io/types";
 
 // 前向声明，避免循环依赖
 import type { ImageManager } from "./ImageManager";
@@ -17,11 +17,11 @@ export interface ImageHistoryHandlerOptions {
  * 图片历史记录处理器
  * 
  * 职责：
- * 1. 创建和管理快照
+ * 1. 创建和管理快照（使用 ImageExportData 格式）
  * 2. 记录历史操作
  * 3. 执行撤销/重做时，调用 ImageManager 的方法
  * 
- * 注意：不直接操作 canvas/renderer，而是通过 ImageManager
+ * 快照格式：{ id, metadata, style }
  */
 export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
     private editor: CanvasEditor;
@@ -42,30 +42,19 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
     // ─── 快照 ─────────────────────────────────────────
 
     /**
-     * 创建轻量快照（仅矩阵）
-     * 用于 modify 操作，大幅减少内存占用
-     */
-    createLightSnapshot(obj: FabricObject): ObjectSnapshot {
-        const id = this.editor.metadata.get(obj)?.id ?? "";
-        const matrix = obj.calcTransformMatrix() as TransformMatrix;
-        const data: ImageSnapshotData = { matrix };
-        return { id, data };
-    }
-
-    /**
-     * 创建完整快照
-     * 用于 add/remove 操作，包含恢复所需的全部信息
+     * 创建完整快照（ImageExportData 格式）
      */
     createSnapshot(obj: FabricObject): ObjectSnapshot {
-        const id = this.editor.metadata.get(obj)?.id ?? "";
-        const matrix = obj.calcTransformMatrix() as TransformMatrix;
+        const metadata = this.editor.metadata.get(obj) as ImageObjectData | undefined;
+        const id = metadata?.id ?? "";
+        const matrix = obj.calcTransformMatrix();
 
-        // 获取 src 和 objectData
-        const fullData = obj.toObject([...EXTRA_PROPS]);
-        const data: ImageSnapshotData = {
-            matrix,
-            src: fullData.src as string,
-            objectData: fullData.data,
+        const data: ImageExportData = {
+            id,
+            metadata: { ...metadata } as ImageObjectData,
+            style: {
+                matrix: [matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]],
+            },
         };
 
         return { id, data };
@@ -80,8 +69,7 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
             if (!this.editor.metadata.is(obj, "category", Category.Image)) continue;
             const id = this.editor.metadata.get(obj)?.id;
             if (id) {
-                // 使用轻量快照
-                this.transformStartSnapshots.set(id, this.createLightSnapshot(obj));
+                this.transformStartSnapshots.set(id, this.createSnapshot(obj));
             }
         }
     }
@@ -104,8 +92,7 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
             const beforeSnapshot = this.transformStartSnapshots.get(id);
             if (beforeSnapshot) {
                 beforeSnapshots.push(beforeSnapshot);
-                // 使用轻量快照
-                afterSnapshots.push(this.createLightSnapshot(obj));
+                afterSnapshots.push(this.createSnapshot(obj));
                 objectIds.push(id);
             }
         }
@@ -211,45 +198,24 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
     // ─── 私有方法 ─────────────────────────────────────────
 
     /**
-     * 从快照恢复图片
+     * 从快照恢复图片（ImageExportData 格式）
      * 通过 ImageManager.add 添加，不记录历史
      */
     private async restoreImages(snapshots: ObjectSnapshot[]): Promise<void> {
         for (const snapshot of snapshots) {
-            const data = snapshot.data as ImageSnapshotData;
+            const exportData = snapshot.data as ImageExportData;
+            const { metadata, style } = exportData;
 
-            if (!data.src) {
+            if (!metadata?.src) {
                 console.warn(`[ImageHistoryHandler] 快照缺少 src，无法恢复: ${snapshot.id}`);
                 continue;
             }
 
             // 从 src 创建图片
-            const img = await ImageFactory.fromUrl(data.src);
-
-            // 设置 center origin（与 ImageRenderer 保持一致）
-            img.set({
-                originX: "center",
-                originY: "center",
-            });
+            const img = await ImageFactory.fromUrl(metadata.src);
 
             // 从矩阵恢复变换
-            if (data.matrix) {
-                const options = util.qrDecompose(data.matrix);
-                img.set({
-                    scaleX: options.scaleX,
-                    scaleY: options.scaleY,
-                    skewX: options.skewX,
-                    skewY: options.skewY,
-                    angle: options.angle,
-                    left: options.translateX,
-                    top: options.translateY,
-                });
-            }
-
-            // 恢复对象元数据
-            if (data.objectData) {
-                img.set("data", data.objectData);
-            }
+            this.applyMatrixToImage(img, style.matrix);
 
             // 通过 manager.add 添加，不记录历史
             this.manager.add(img, {
@@ -257,29 +223,28 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
                 recordHistory: false,
                 needSync: false,
                 setActive: false,
+                fileName: metadata.fileName,
+                naturalWidth: metadata.naturalWidth,
+                naturalHeight: metadata.naturalHeight,
             });
         }
     }
 
     /**
      * 应用快照到现有图片（用于 modify 的撤销/重做）
-     * 支持轻量快照（仅矩阵）和完整快照
-     * 
-     * 注意：图片使用 originX='center', originY='center'
-     * qrDecompose 的 translateX/translateY 就是中心点坐标，即 left/top
      */
     private applySnapshots(snapshots: ObjectSnapshot[]): void {
         for (const snapshot of snapshots) {
             const obj = this.manager.getById(snapshot.id);
             if (!obj) continue;
 
-            const data = snapshot.data as ImageSnapshotData;
+            const exportData = snapshot.data as ImageExportData;
+            const style = exportData.style;
 
-            if (data.matrix) {
+            if (style?.matrix) {
                 // 从矩阵恢复变换
-                const options = util.qrDecompose(data.matrix);
+                const options = util.qrDecompose(style.matrix);
 
-                // 图片使用 center origin，translateX/translateY 就是 left/top
                 obj.set({
                     flipX: false,
                     flipY: false,
@@ -296,5 +261,24 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
             obj.setCoords();
         }
         this.editor.canvas.requestRenderAll();
+    }
+
+    /**
+     * 从变换矩阵恢复图片位置和缩放
+     */
+    private applyMatrixToImage(img: FabricObject, matrix: StyleData["matrix"]): void {
+        const options = util.qrDecompose(matrix);
+
+        img.set({
+            originX: "center",
+            originY: "center",
+            scaleX: options.scaleX,
+            scaleY: options.scaleY,
+            skewX: options.skewX,
+            skewY: options.skewY,
+            angle: options.angle,
+            left: options.translateX,
+            top: options.translateY,
+        });
     }
 }

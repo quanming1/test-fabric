@@ -24,6 +24,8 @@ export interface ObjectData {
     category?: Category;
     /** 对象唯一标识 */
     id?: string;
+    /** 是否已删除 */
+    is_delete?: boolean;
 }
 
 /**
@@ -31,6 +33,8 @@ export interface ObjectData {
  */
 export interface ImageObjectData extends ObjectData {
     category?: Category.Image;
+    /** 图片源 URL */
+    src?: string;
     /** 原始文件名 */
     fileName?: string;
     /** 原始图片宽度（像素） */

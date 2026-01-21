@@ -22,7 +22,7 @@ export type {
 
 // Sync
 export { SyncManager } from "./sync";
-export { Handler, API } from "./sync";
+export { API } from "./sync";
 export type {
     SyncEvent,
     SyncEventType,

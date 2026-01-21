@@ -13,8 +13,6 @@ export interface UseSyncManagerReturn {
     initialized: boolean;
     /** 初始化错误 */
     error: Error | null;
-    /** 当前客户端 ID */
-    clientId: string | null;
 }
 
 /**
@@ -29,7 +27,6 @@ export function useSyncManager(
     const syncManagerRef = useRef<SyncManager | null>(null);
     const [initialized, setInitialized] = useState(false);
     const [error, setError] = useState<Error | null>(null);
-    const [clientId, setClientId] = useState<string | null>(null);
 
     useEffect(() => {
         if (!editor || !enabled) {
@@ -42,8 +39,6 @@ export function useSyncManager(
 
         // 将同步管理器注入到历史管理器
         editor.history.setSyncManager(syncManager);
-
-        setClientId(syncManager.clientId);
 
         // 初始化同步
         syncManager
@@ -63,7 +58,6 @@ export function useSyncManager(
             syncManagerRef.current = null;
             editor.history.setSyncManager(null);
             setInitialized(false);
-            setClientId(null);
         };
     }, [editor, enabled]);
 
@@ -71,6 +65,5 @@ export function useSyncManager(
         syncManager: syncManagerRef.current,
         initialized,
         error,
-        clientId,
     };
 }

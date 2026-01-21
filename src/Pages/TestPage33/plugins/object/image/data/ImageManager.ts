@@ -4,7 +4,6 @@ import { EditorMode } from "../../../mode/ModePlugin";
 import { ImageHistoryHandler } from "./ImageHistoryHandler";
 import { ImageRenderer } from "../render/ImageRenderer";
 import { ImageFactory } from "../helper";
-import { EXTRA_PROPS } from "../types";
 
 export interface ImageManagerOptions {
     editor: CanvasEditor;
@@ -83,10 +82,14 @@ export class ImageManager {
             naturalHeight,
         } = config ?? {};
 
+        // 获取图片 src
+        const src = (img as any).src || (img as any)._element?.src || "";
+
         // 1. 设置元数据（包含图片特有的文件信息）
         const metadata: ImageObjectData = {
             category: Category.Image,
             id,
+            src,
             fileName,
             naturalWidth,
             naturalHeight,
@@ -263,25 +266,87 @@ export class ImageManager {
 
     // ─── 序列化（公开） ─────────────────────────────────────────
 
+    /** 导出图片数据为标准格式 */
     exportData(): object[] {
-        return this.imageList.map((obj) => obj.toObject([...EXTRA_PROPS]));
+        return this.imageList.map((obj) => {
+            const metadata = this.editor.metadata.get(obj) as ImageObjectData | undefined;
+            const matrix = obj.calcTransformMatrix();
+
+            return {
+                id: metadata?.id || "",
+                metadata: { ...metadata },
+                style: {
+                    matrix: [matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]] as [number, number, number, number, number, number],
+                },
+            };
+        });
     }
 
+    /** 导入图片数据（支持标准格式） */
     async importData(data: object[]): Promise<void> {
         if (!Array.isArray(data)) return;
 
         for (const item of data) {
-            const img = await ImageFactory.fromSnapshot(item as Record<string, unknown>);
-            const existingId = this.editor.metadata.get(img as unknown as FabricObject)?.id;
+            const record = item as Record<string, unknown>;
 
-            // 导入时不记录历史
-            this.add(img, {
-                id: existingId,
-                recordHistory: false,
-                needSync: false,
-                setActive: false,
-            });
+            // 新格式：{ id, metadata, style }
+            if (record.metadata && record.style) {
+                const metadata = record.metadata as Record<string, unknown>;
+                const style = record.style as Record<string, unknown>;
+
+                // 跳过已删除的图片
+                if (metadata.is_delete === true) continue;
+
+                const src = metadata.src as string;
+                const matrix = style.matrix as [number, number, number, number, number, number];
+                const id = (record.id as string) || (metadata.id as string) || undefined;
+
+                if (!src) continue;
+
+                const img = await ImageFactory.fromUrl(src);
+                this.applyMatrixToImage(img, matrix);
+
+                this.add(img, {
+                    id,
+                    recordHistory: false,
+                    needSync: false,
+                    setActive: false,
+                    fileName: metadata.fileName as string | undefined,
+                    naturalWidth: metadata.naturalWidth as number | undefined,
+                    naturalHeight: metadata.naturalHeight as number | undefined,
+                });
+            } else {
+                // 兼容旧格式
+                const img = await ImageFactory.fromSnapshot(record);
+                const existingId = this.editor.metadata.get(img as unknown as FabricObject)?.id;
+
+                this.add(img, {
+                    id: existingId,
+                    recordHistory: false,
+                    needSync: false,
+                    setActive: false,
+                });
+            }
         }
+    }
+
+    /** 从变换矩阵恢复图片位置和缩放 */
+    private applyMatrixToImage(img: FabricImage, matrix: [number, number, number, number, number, number]): void {
+        const [a, b, c, d, e, f] = matrix;
+        // matrix = [scaleX * cos, scaleX * sin, -scaleY * sin, scaleY * cos, translateX, translateY]
+        const scaleX = Math.sqrt(a * a + b * b);
+        const scaleY = Math.sqrt(c * c + d * d);
+        const angle = Math.atan2(b, a) * (180 / Math.PI);
+
+        img.set({
+            originX: "center",
+            originY: "center",
+            left: e,
+            top: f,
+            scaleX,
+            scaleY,
+            angle,
+        });
     }
 
     clearAll(): void {

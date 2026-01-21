@@ -10,14 +10,23 @@ export interface ImportOptions {
     clearCanvas?: boolean;
 }
 
-/** JSON 导出数据结构 */
-export interface CanvasJSON {
-    version: string;
-    objects: object[];
-    background?: string;
-    /** 各插件的数据 */
-    plugins?: Record<string, unknown>;
+import type { ImageObjectData } from "../../core";
+
+/** 样式数据 */
+export interface StyleData {
+    /** 变换矩阵 [a, b, c, d, e, f] */
+    matrix: [number, number, number, number, number, number];
 }
+
+/** 标准图片导出数据格式 */
+export interface ImageExportData {
+    id: string;
+    metadata: ImageObjectData;
+    style: StyleData;
+}
+
+/** JSON 导出数据结构 - 图片对象数组 */
+export type CanvasJSON = ImageExportData[];
 
 /** 导入导出事件 */
 export interface IOEvents {
@@ -28,3 +37,4 @@ export interface IOEvents {
     "io:import:complete": { objects: object[] };
     "io:import:error": { error: Error };
 }
+

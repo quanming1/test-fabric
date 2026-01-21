@@ -9,7 +9,7 @@ export type HistoryActionType = "add" | "remove" | "modify";
 export interface ObjectSnapshot {
   id: string;
   /** 对象序列化数据（插件自行决定存什么） */
-  data: Record<string, unknown>;
+  data: unknown;
 }
 
 /**

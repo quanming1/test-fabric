@@ -12,7 +12,7 @@ export default function TestPage33() {
   const { canvasElRef, editor } = useCanvasEditor(wrapRef);
 
   // 启用多端同步
-  const { initialized, clientId } = useSyncManager(editor, {
+  const { initialized } = useSyncManager(editor, {
     enabled: true,
   });
 
@@ -33,9 +33,6 @@ export default function TestPage33() {
         }}
       >
         {initialized ? "同步已连接" : "连接中..."}
-        {clientId && (
-          <span style={{ marginLeft: 8, opacity: 0.8 }}>ID: {clientId.slice(0, 8)}</span>
-        )}
       </div>
 
       <div className={styles.stage}>

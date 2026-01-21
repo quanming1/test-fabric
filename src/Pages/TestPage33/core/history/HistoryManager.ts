@@ -273,6 +273,7 @@ export class HistoryManager {
 
     this.pushEntry(fullRecord);
 
+
     // 如果需要同步，调用同步管理器推送事件
     if (fullRecord.needSync && this.syncManager) {
       this.syncManager.pushEvent(fullRecord).catch((err: Error) => {

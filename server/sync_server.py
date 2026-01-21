@@ -39,30 +39,58 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # ─── 数据存储（内存） ─────────────────────────────────────────
 
-seq_counter = 0
-events: List[Dict[str, Any]] = []
-canvas_json: Optional[Dict[str, Any]] = None
+sequence_id = 0  # 自增序列号
+canvas_data: List[Dict[str, Any]] = []  # 画布数据，ImageExportData 数组
 sse_clients: Dict[str, asyncio.Queue] = {}
 
 # ─── Pydantic 模型 ─────────────────────────────────────────
 
-class ClientChangeData(BaseModel):
-    clientId: str
-    snapshot: Dict[str, Any] | List[Dict[str, Any]]
+class SyncEventItem(BaseModel):
+    """单个同步事件项"""
+    event_type: Literal["client:change"]
+    event_data: Dict[str, Any]  # ImageExportData 格式
 
-class ServerAddImageData(BaseModel):
-    urls: List[str]
-
-class SyncEventRequest(BaseModel):
-    eventType: Literal["client:change", "server:add_image"]
-    data: Dict[str, Any]
+class SyncPushRequest(BaseModel):
+    """推送同步事件的请求体"""
+    events: List[SyncEventItem]
 
 class FullSyncRequest(BaseModel):
+    """全量同步请求"""
     clientId: str
-    canvasJSON: Dict[str, Any]
+    canvasJSON: List[Dict[str, Any]]  # ImageExportData 数组
 
 class InjectImageRequest(BaseModel):
-    urls: Optional[List[str]] = None  # 可选，不传则从 uploads 随机选
+    urls: Optional[List[str]] = None
+
+# ─── 画布数据操作 ─────────────────────────────────────────
+
+def merge_event_to_canvas(event_data: Dict[str, Any]) -> None:
+    """
+    将事件数据合并到画布中
+    - 按 id 查找，找到则替换，找不到则 push
+    """
+    global canvas_data
+    
+    event_id = event_data.get("id")
+    if not event_id:
+        print(f"[警告] 事件数据缺少 id: {event_data}")
+        return
+    
+    # 查找是否已存在
+    found_index = -1
+    for i, item in enumerate(canvas_data):
+        if item.get("id") == event_id:
+            found_index = i
+            break
+    
+    if found_index >= 0:
+        # 找到了，替换
+        canvas_data[found_index] = event_data
+        print(f"[合并] 替换对象 id={event_id}")
+    else:
+        # 没找到，push
+        canvas_data.append(event_data)
+        print(f"[合并] 新增对象 id={event_id}")
 
 # ─── SSE 广播 ─────────────────────────────────────────
 
@@ -70,29 +98,33 @@ async def broadcast(event: Dict[str, Any]):
     """向所有客户端广播事件"""
     message = json.dumps({"type": "sync_event", "data": event})
     
+    broadcast_count = 0
     for client_id, queue in list(sse_clients.items()):
         try:
             await queue.put(message)
+            broadcast_count += 1
         except Exception as e:
             print(f"[广播错误] clientId={client_id}, error={e}")
     
-    print(f"[广播] seq={event['seq']}, eventType={event['eventType']}, 客户端数={len(sse_clients)}")
+    print(f"[广播] sequence_id={event.get('sequence_id')}, 广播给 {broadcast_count} 个客户端")
 
 
 # ─── 接口 ─────────────────────────────────────────
 
 @app.get("/api/canvas/sync/sse")
-async def sse_endpoint(clientId: str = Query(..., description="客户端ID")):
+async def sse_endpoint():
     """SSE 连接端点"""
+    import uuid
+    connection_id = str(uuid.uuid4())[:8]  # 仅用于内部连接管理
     
     async def event_generator():
         queue = asyncio.Queue()
-        sse_clients[clientId] = queue
-        print(f"[SSE] 客户端连接: {clientId}, 当前连接数: {len(sse_clients)}")
+        sse_clients[connection_id] = queue
+        print(f"[SSE] 客户端连接: {connection_id}, 当前连接数: {len(sse_clients)}")
         
         try:
             # 发送初始连接成功消息
-            yield f"data: {json.dumps({'type': 'connected', 'clientId': clientId})}\n\n"
+            yield f"data: {json.dumps({'type': 'connected'})}\n\n"
             
             while True:
                 try:
@@ -104,8 +136,8 @@ async def sse_endpoint(clientId: str = Query(..., description="客户端ID")):
         except asyncio.CancelledError:
             pass
         finally:
-            sse_clients.pop(clientId, None)
-            print(f"[SSE] 客户端断开: {clientId}, 当前连接数: {len(sse_clients)}")
+            sse_clients.pop(connection_id, None)
+            print(f"[SSE] 客户端断开: {connection_id}, 当前连接数: {len(sse_clients)}")
     
     return StreamingResponse(
         event_generator(),
@@ -119,54 +151,77 @@ async def sse_endpoint(clientId: str = Query(..., description="客户端ID")):
 
 
 @app.post("/api/canvas/sync/event")
-async def push_sync_event(request: SyncEventRequest):
-    """推送同步事件"""
-    global seq_counter
+async def push_sync_event(request: SyncPushRequest):
+    """
+    推送同步事件
+    - 接收 events 数组
+    - 每个 event 合并到画布数据中
+    - sequence_id 自增
+    - 先返回响应，再异步广播（让前端更快拿到新 sequence_id）
+    """
+    global sequence_id
     
-    seq_counter += 1
-    event = {
-        "seq": seq_counter,
-        "eventType": request.eventType,
-        "data": request.data,
-    }
+    # 收集待广播的事件
+    broadcast_events = []
     
-    events.append(event)
-    print(f"[事件] seq={event['seq']}, eventType={request.eventType}, 事件总数={len(events)}")
+    for event_item in request.events:
+        # sequence_id 自增
+        sequence_id += 1
+        
+        # 合并到画布数据
+        merge_event_to_canvas(event_item.event_data)
+        
+        # 构造广播事件
+        broadcast_events.append({
+            "sequence_id": sequence_id,
+            "event_type": event_item.event_type,
+            "event_data": event_item.event_data,
+        })
     
-    await broadcast(event)
+    print(f"[事件] 处理 {len(request.events)} 个事件, sequence_id={sequence_id}, 画布对象数={len(canvas_data)}")
     
-    return {"seq": event["seq"], "eventArrayLength": len(events)}
+    # 异步广播（不阻塞响应）
+    asyncio.create_task(broadcast_all(broadcast_events))
+    
+    return {"sequence_id": sequence_id}
+
+
+async def broadcast_all(events: List[Dict[str, Any]]):
+    """批量广播事件"""
+    for event in events:
+        await broadcast(event)
 
 
 @app.post("/api/canvas/sync/full")
 async def full_sync(request: FullSyncRequest):
     """上传全量画布数据"""
-    global canvas_json, events
+    global canvas_data
     
-    canvas_json = request.canvasJSON
-    events = []
+    canvas_data = request.canvasJSON
     
-    print(f"[全量同步] clientId={request.clientId}, 事件数组已清空")
+    print(f"[全量同步] clientId={request.clientId}, 画布对象数={len(canvas_data)}")
     
     return {"success": True}
 
 
 @app.get("/api/canvas/sync/full_data")
 async def get_full_data():
-    """获取初始化数据"""
-    print(f"[初始化] 返回全量数据和 {len(events)} 个事件")
+    """获取初始化数据（画布全量数据）"""
+    print(f"[初始化] 返回画布数据, 对象数={len(canvas_data)}")
     
-    return {"canvasJSON": canvas_json, "events": events}
+    return {
+        "canvasJSON": canvas_data,
+        "sequence_id": sequence_id,
+    }
 
 
 @app.get("/api/canvas/sync/debug")
 async def debug_status():
     """调试接口：查看当前状态"""
     return {
-        "seqCounter": seq_counter,
-        "eventsCount": len(events),
-        "events": events[-10:],  # 只返回最近10条
-        "hasCanvasJSON": canvas_json is not None,
+        "sequence_id": sequence_id,
+        "canvasDataCount": len(canvas_data),
+        "canvasData": canvas_data,
         "connectedClients": list(sse_clients.keys()),
     }
 
@@ -174,11 +229,10 @@ async def debug_status():
 @app.post("/api/canvas/sync/reset")
 async def reset_data():
     """调试接口：重置所有数据"""
-    global seq_counter, events, canvas_json
+    global sequence_id, canvas_data
     
-    seq_counter = 0
-    events = []
-    canvas_json = None
+    sequence_id = 0
+    canvas_data = []
     
     print("[重置] 所有数据已清空")
     return {"success": True}
@@ -188,9 +242,9 @@ async def reset_data():
 async def inject_image(request: InjectImageRequest = InjectImageRequest()):
     """
     调试接口：后端主动插入图片
-    后端只负责传递图片 URL，前端负责封装为 HistoryRecord
+    构造 ImageExportData 格式的数据并广播
     """
-    global seq_counter
+    global sequence_id
     
     urls = request.urls
     
@@ -207,25 +261,49 @@ async def inject_image(request: InjectImageRequest = InjectImageRequest()):
         random_file = random.choice(files)
         urls = [f"http://localhost:{PORT}/uploads/{random_file}"]
     
-    # 构造 server:add_image 事件
-    seq_counter += 1
-    event = {
-        "seq": seq_counter,
-        "eventType": "server:add_image",
-        "data": {
-            "urls": urls,
-        },
-    }
-    events.append(event)
+    injected_ids = []
     
-    # 广播给所有客户端
-    await broadcast(event)
+    for url in urls:
+        sequence_id += 1
+        
+        # 生成唯一 ID
+        img_id = f"img_server_{sequence_id}_{random.randint(0, 10**6)}"
+        
+        # 构造 ImageExportData 格式
+        event_data = {
+            "id": img_id,
+            "metadata": {
+                "category": "image",
+                "id": img_id,
+                "src": url,
+                "is_delete": False,
+            },
+            "style": {
+                "matrix": [1, 0, 0, 1, 400, 300],  # 默认位置
+            },
+        }
+        
+        # 合并到画布数据
+        merge_event_to_canvas(event_data)
+        
+        # 构造广播事件
+        broadcast_event = {
+            "sequence_id": sequence_id,
+            "event_type": "server:add_image",
+            "event_data": event_data,
+        }
+        
+        # 广播给所有客户端
+        await broadcast(broadcast_event)
+        
+        injected_ids.append(img_id)
     
-    print(f"[注入图片] seq={event['seq']}, urls={urls}")
+    print(f"[注入图片] 注入 {len(urls)} 张图片, sequence_id={sequence_id}")
     
     return {
         "success": True,
-        "seq": event["seq"],
+        "sequence_id": sequence_id,
+        "ids": injected_ids,
         "urls": urls,
     }
 
@@ -276,7 +354,7 @@ if __name__ == "__main__":
     print(f"  地址: http://localhost:{PORT}")
     print(f"========================================\n")
     print(f"接口列表:")
-    print(f"  GET  /api/canvas/sync/sse?clientId=xxx  - SSE 连接")
+    print(f"  GET  /api/canvas/sync/sse               - SSE 连接")
     print(f"  POST /api/canvas/sync/event             - 推送事件")
     print(f"  POST /api/canvas/sync/full              - 全量同步")
     print(f"  GET  /api/canvas/sync/full_data         - 获取初始化数据")
