@@ -6,29 +6,26 @@ import { Category, type ObjectMetadata } from "../../../../core";
 
 /** 标签样式配置 */
 export interface LabelStyle {
-    /** 字体大小 */
     fontSize: number;
-    /** 字体族 */
     fontFamily: string;
-    /** 文字颜色 */
     textColor: string;
-    /** 标签距离图片顶部的偏移（场景坐标） */
+    /** 标签距离图片顶部的偏移（视觉像素） */
     offsetY: number;
+    /** 文件名和尺寸之间的最小间距 */
+    gap: number;
 }
 
-/** 默认标签样式 */
 const DEFAULT_LABEL_STYLE: LabelStyle = {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: "Arial, sans-serif",
-    textColor: "#666666ff", // 淡雅灰
-    offsetY: 3,
+    textColor: "#00000073",
+    offsetY: 4,
+    gap: 8,
 };
 
 /** 标签渲染数据 */
 export interface LabelRenderData {
-    /** 关联的图片 ID */
     id: string;
-    /** 关联的图片对象（用于计算位置和获取尺寸信息） */
     target: FabricObject;
 }
 
@@ -37,134 +34,127 @@ export interface LabelRenderData {
 /**
  * 图片标签渲染器
  * 
- * 继承 BaseRenderer，管理选中图片上方的浮动标签。
- * 
- * 功能：
- * - 选中图片时在其上方显示标签（文件名 + 尺寸）
- * - 支持多选：每个选中的图片都显示独立标签
- * - 拖拽/缩放/旋转时实时跟随更新
- * - 标签大小不随画布缩放变化（保持固定视觉大小）
- * 
- * 特性：
- * - excludeFromExport: true - 不参与序列化
- * - Category.Label - 不参与历史记录
+ * 在选中图片上方显示标签（文件名左对齐 + 尺寸右对齐）
+ * - 标签视觉大小固定，不随画布缩放变化
+ * - 文件名超长时自动截断显示省略号
+ * - 不可选中、不触发事件、不参与序列化和历史记录
  */
 export class ImageLabelRenderer extends BaseRenderer<LabelRenderData, LabelStyle, Group> {
+    /** 缓存原始文件名 */
+    private filenameCache = new Map<string, string>();
 
     constructor(canvas: Canvas, metadata: ObjectMetadata, style: Partial<LabelStyle> = {}) {
         super(canvas, metadata, DEFAULT_LABEL_STYLE, style);
     }
 
-    // ─── BaseRenderer 抽象方法实现 ─────────────────────────────
-
     protected getDataId(data: LabelRenderData): string {
         return data.id;
     }
 
-    /**
-     * 创建标签对象
-     * 标签由 Group 包裹 FabricText，便于整体定位和缩放
-     */
-    protected createObject(id: string, data: LabelRenderData, index: number, inverseZoom: number): void {
-        const content = this.getLabelContent(data.target);
+    protected createObject(_id: string, data: LabelRenderData, _index: number, inverseZoom: number): void {
         const { fontSize, fontFamily, textColor } = this.style;
 
-        // 创建文本对象
-        const text = new FabricText(content, {
-            fontSize,
-            fontFamily,
-            fill: textColor,
-            originX: "left",
-            originY: "bottom", // 底部对齐，便于定位在图片上方
-        });
+        // 缓存文件名
+        const filename = this.getFilename(data.target);
+        this.filenameCache.set(data.id, filename);
 
-        // 计算标签位置（图片左上角上方）
-        const pos = this.calculatePosition(data.target, inverseZoom);
+        // 创建两个文本对象
+        const filenameText = new FabricText("", { fontSize, fontFamily, fill: textColor, lineHeight: 1 });
+        const dimensionsText = new FabricText("", { fontSize, fontFamily, fill: textColor, lineHeight: 1 });
 
-        // 用 Group 包裹，便于整体缩放（保持视觉大小不变）
-        const group = new Group([text], {
-            left: pos.left,
-            top: pos.top,
-            scaleX: inverseZoom,
-            scaleY: inverseZoom,
+        const group = new Group([filenameText, dimensionsText], {
             originX: "left",
             originY: "bottom",
             selectable: false,
             evented: false,
-            excludeFromExport: true, // 不参与序列化
+            excludeFromExport: true,
+            hoverCursor: "default",
         });
 
-        // 标记为标签类型，不参与历史记录等逻辑
-        this.metadata.set(group, { category: Category.Label, id: `label-${id}` });
+        this.metadata.set(group, { category: Category.Label, id: `label-${data.id}` });
+        this.addObject(data.id, group);
 
-        this.addObject(id, group);
+        // 更新内容和位置
+        this.updateLabelLayout(group, data, inverseZoom);
+        this.canvas.bringObjectToFront(group);
+    }
+
+    protected updateObject(_id: string, group: Group, data: LabelRenderData, _index: number, inverseZoom: number): void {
+        this.updateLabelLayout(group, data, inverseZoom);
         this.canvas.bringObjectToFront(group);
     }
 
     /**
-     * 更新标签对象
-     * 更新内容（尺寸可能变化）和位置（图片可能移动/旋转）
+     * 更新标签布局（内容 + 位置）
      */
-    protected updateObject(id: string, group: Group, data: LabelRenderData, index: number, inverseZoom: number): void {
-        // 更新文本内容
-        const content = this.getLabelContent(data.target);
-        const text = group.item(0) as FabricText;
-        if (text.text !== content) {
-            text.set("text", content);
-        }
+    private updateLabelLayout(group: Group, data: LabelRenderData, inverseZoom: number): void {
+        const { fontSize, fontFamily, offsetY, gap } = this.style;
+        const target = data.target;
 
-        // 更新位置和缩放
-        const pos = this.calculatePosition(data.target, inverseZoom);
+        // 获取图片边界
+        const bounds = this.getImageBounds(target);
+
+        // 获取尺寸文本
+        const width = Math.round((target.width || 0) * (target.scaleX || 1));
+        const height = Math.round((target.height || 0) * (target.scaleY || 1));
+        const dimensions = `${width}×${height}`;
+
+        // 计算标签内部宽度（场景宽度转换为内部坐标）
+        const labelWidth = bounds.width / inverseZoom;
+
+        // 计算文件名可用宽度并截断
+        const dimensionsWidth = this.measureText(dimensions, fontSize, fontFamily);
+        const maxFilenameWidth = Math.max(0, labelWidth - dimensionsWidth - gap);
+        const filename = this.filenameCache.get(data.id) || "image";
+        const truncatedFilename = this.truncateText(filename, maxFilenameWidth, fontSize, fontFamily);
+
+        // 更新文本
+        const filenameText = group.item(0) as FabricText;
+        const dimensionsText = group.item(1) as FabricText;
+        filenameText.set("text", truncatedFilename);
+        dimensionsText.set("text", dimensions);
+
+        // 设置子元素位置（相对于 Group 中心）
+        const halfWidth = labelWidth / 2;
+        const halfHeight = fontSize / 2;
+
+        filenameText.set({ left: -halfWidth, top: -halfHeight, originX: "left", originY: "top" });
+        dimensionsText.set({ left: halfWidth, top: -halfHeight, originX: "right", originY: "top" });
+
+        // 设置 Group 位置和缩放
         group.set({
-            left: pos.left,
-            top: pos.top,
+            left: bounds.left,
+            top: bounds.top - offsetY * inverseZoom,
+            width: labelWidth,
+            height: fontSize,
             scaleX: inverseZoom,
             scaleY: inverseZoom,
         });
         group.setCoords();
-
-        // 确保标签在最上层
-        this.canvas.bringObjectToFront(group);
     }
 
     // ─── 公开 API ─────────────────────────────────────────
 
-    /**
-     * 显示标签
-     * @param targets 选中的图片对象列表
-     */
     show(targets: FabricObject[]): void {
-        // 转换为渲染数据格式
         const data: LabelRenderData[] = targets
             .map((target) => {
                 const id = this.metadata.get(target)?.id;
                 return id ? { id, target } : null;
             })
             .filter((d): d is LabelRenderData => d !== null);
-
-        // 调用 BaseRenderer.sync 进行 diff 更新
         this.sync(data);
     }
 
-    /**
-     * 隐藏所有标签
-     */
     hide(): void {
         this.sync([]);
     }
 
-    /**
-     * 置顶所有标签（图层变化后调用）
-     */
     bringToFront(): void {
         for (const group of this.objects.values()) {
             this.canvas.bringObjectToFront(group);
         }
     }
 
-    /**
-     * 清空所有标签
-     */
     clear(): void {
         for (const group of this.objects.values()) {
             this.canvas.remove(group);
@@ -174,69 +164,57 @@ export class ImageLabelRenderer extends BaseRenderer<LabelRenderData, LabelStyle
 
     destroy(): void {
         this.clear();
+        this.filenameCache.clear();
     }
 
-    // ─── 私有方法 ─────────────────────────────────────────
+    // ─── 私有工具方法 ─────────────────────────────────────────
 
-    /**
-     * 计算标签位置
-     * 定位在图片边界框的左上角上方（考虑旋转）
-     */
-    private calculatePosition(target: FabricObject, inverseZoom: number): { left: number; top: number } {
-        // 获取图片的四个角点（场景坐标，已考虑旋转）
+    /** 获取图片边界框（场景坐标，考虑旋转） */
+    private getImageBounds(target: FabricObject): { left: number; top: number; width: number } {
         const coords = target.getCoords();
-
-        // 找到最小的 x 和 y（边界框左上角）
-        let minY = Infinity;
-        let minX = Infinity;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity;
         for (const pt of coords) {
-            if (pt.y < minY) minY = pt.y;
             if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
         }
-
-        return {
-            left: minX,
-            top: minY - this.style.offsetY * inverseZoom,
-        };
+        return { left: minX, top: minY, width: maxX - minX };
     }
 
-    /**
-     * 生成标签内容
-     * 格式：文件名  宽×高
-     */
-    private getLabelContent(target: FabricObject): string {
-        const filename = this.getFilename(target);
-        // 计算实际渲染尺寸（原始尺寸 × 缩放比例）
-        const width = Math.round((target.width || 0) * (target.scaleX || 1));
-        const height = Math.round((target.height || 0) * (target.scaleY || 1));
-
-        return `${filename}  ${width}×${height}`;
+    /** 测量文本宽度 */
+    private measureText(text: string, fontSize: number, fontFamily: string): number {
+        return new FabricText(text, { fontSize, fontFamily }).width || 0;
     }
 
-    /**
-     * 从图片对象提取文件名
-     * - data URL: 返回 "image"
-     * - 普通 URL: 提取路径中的文件名
-     */
-    private getFilename(target: FabricObject): string {
-        if (target instanceof FabricImage) {
-            const src = (target as any).getSrc?.() || (target as any)._element?.src || "";
-            if (src) {
-                // data URL 无法提取文件名
-                if (src.startsWith("data:")) {
-                    return "image";
-                }
-                // 从 URL 路径提取文件名
-                try {
-                    const url = new URL(src, window.location.href);
-                    const pathname = url.pathname;
-                    const filename = pathname.split("/").pop() || "image";
-                    return filename.split("?")[0]; // 移除查询参数
-                } catch {
-                    return "image";
-                }
+    /** 截断文本，超出宽度显示省略号 */
+    private truncateText(text: string, maxWidth: number, fontSize: number, fontFamily: string): string {
+        if (maxWidth <= 0) return "...";
+        if (this.measureText(text, fontSize, fontFamily) <= maxWidth) return text;
+
+        let left = 0, right = text.length;
+        while (left < right) {
+            const mid = Math.floor((left + right + 1) / 2);
+            if (this.measureText(text.slice(0, mid) + "...", fontSize, fontFamily) <= maxWidth) {
+                left = mid;
+            } else {
+                right = mid - 1;
             }
         }
-        return "image";
+        return left > 0 ? text.slice(0, left) + "..." : "...";
+    }
+
+    /** 从图片提取文件名 */
+    private getFilename(target: FabricObject): string {
+        if (!(target instanceof FabricImage)) return "image";
+
+        const src = (target as any).getSrc?.() || (target as any)._element?.src || "";
+        if (!src || src.startsWith("data:")) return "image";
+
+        try {
+            const pathname = new URL(src, window.location.href).pathname;
+            return pathname.split("/").pop()?.split("?")[0] || "image";
+        } catch {
+            return "image";
+        }
     }
 }
