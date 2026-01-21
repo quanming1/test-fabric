@@ -7,7 +7,7 @@ export { EventBus } from "./event/EventBus";
 // Object
 export { ObjectMetadata } from "./object/ObjectMetadata";
 export { Category } from "./object/types";
-export type { ObjectData } from "./object/types";
+export type { ObjectData, ImageObjectData } from "./object/types";
 
 // History
 export { HistoryManager, BaseHistoryHandler } from "./history";

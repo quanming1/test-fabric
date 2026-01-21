@@ -13,7 +13,7 @@ export interface ImageRenderData {
 /** Hover 边框样式配置 */
 const HOVER_BORDER_STYLE = {
     stroke: "#7171ee",
-    strokeWidth: 2,
+    strokeWidth: 1,
 };
 
 /**
@@ -44,10 +44,7 @@ export class ImageRenderer extends BaseRenderer<ImageRenderData, ImageStyle, Fab
             if (this.canvas.getActiveObject() === target) return;
 
             this.hoveredObject = target;
-            target.set({
-                stroke: HOVER_BORDER_STYLE.stroke,
-                strokeWidth: HOVER_BORDER_STYLE.strokeWidth,
-            });
+            this.applyHoverBorder(target);
             this.canvas.requestRenderAll();
         });
 
@@ -55,30 +52,51 @@ export class ImageRenderer extends BaseRenderer<ImageRenderData, ImageStyle, Fab
             const target = e.target;
             if (!target || target !== this.hoveredObject) return;
 
-            target.set({
-                stroke: undefined,
-                strokeWidth: 0,
-            });
+            this.clearHoverBorder(target);
             this.hoveredObject = null;
             this.canvas.requestRenderAll();
         });
 
         // 选中时立即移除 hover 边框
-        const clearHoverBorder = (target: FabricObject | undefined) => {
+        const clearHoverOnSelect = (target: FabricObject | undefined) => {
             if (target && target === this.hoveredObject) {
-                target.set({
-                    stroke: undefined,
-                    strokeWidth: 0,
-                });
+                this.clearHoverBorder(target);
                 this.hoveredObject = null;
                 this.canvas.requestRenderAll();
             }
         };
 
-        this.canvas.on("selection:created", (e) => clearHoverBorder(e.selected?.[0]));
-        this.canvas.on("selection:updated", (e) => clearHoverBorder(e.selected?.[0]));
+        this.canvas.on("selection:created", (e) => clearHoverOnSelect(e.selected?.[0]));
+        this.canvas.on("selection:updated", (e) => clearHoverOnSelect(e.selected?.[0]));
 
         this.hoverHandlersBound = true;
+    }
+
+    /** 应用 hover 边框（宽度不随 zoom 和图片缩放变化） */
+    private applyHoverBorder(target: FabricObject): void {
+        const zoom = this.canvas.getZoom();
+        const scaleX = target.scaleX || 1;
+        // 边框宽度需要除以 zoom 和图片缩放，保持视觉宽度一致
+        target.set({
+            stroke: HOVER_BORDER_STYLE.stroke,
+            strokeWidth: HOVER_BORDER_STYLE.strokeWidth / zoom / scaleX,
+        });
+    }
+
+    /** 清除 hover 边框 */
+    private clearHoverBorder(target: FabricObject): void {
+        target.set({
+            stroke: undefined,
+            strokeWidth: 0,
+        });
+    }
+
+    /** 更新 hover 边框（zoom 变化时调用） */
+    updateHoverBorder(): void {
+        if (this.hoveredObject) {
+            this.applyHoverBorder(this.hoveredObject);
+            this.canvas.requestRenderAll();
+        }
     }
 
     /** 判断对象是否为图片 */
@@ -94,16 +112,15 @@ export class ImageRenderer extends BaseRenderer<ImageRenderData, ImageStyle, Fab
     /**
      * 图片对象由外部创建，这里只做注册
      */
-    protected createObject(id: string, data: ImageRenderData, index: number, inverseZoom: number): void {
-        // 图片已经在画布上，只需注册到 objects map
-        this.objects.set(id, data.obj);
+    protected createObject(_id: string, data: ImageRenderData, _index: number, _inverseZoom: number): void {
+        this.objects.set(data.id, data.obj);
         this.applyModeConfigToObject(data.obj, this.currentMode);
     }
 
     /**
      * 更新图片状态（主要是交互配置）
      */
-    protected updateObject(id: string, obj: FabricObject, data: ImageRenderData, index: number, inverseZoom: number): void {
+    protected updateObject(_id: string, obj: FabricObject, _data: ImageRenderData, _index: number, _inverseZoom: number): void {
         this.applyModeConfigToObject(obj, this.currentMode);
     }
 

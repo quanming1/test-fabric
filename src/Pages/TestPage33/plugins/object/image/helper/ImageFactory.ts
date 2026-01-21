@@ -3,6 +3,14 @@ import { FabricImage } from "fabric";
 /** 图片上传服务地址 */
 const UPLOAD_API = "http://localhost:3001/api/upload/image";
 
+/** 从文件创建图片的结果 */
+export interface ImageFromFileResult {
+    image: FabricImage;
+    fileName: string;
+    naturalWidth: number;
+    naturalHeight: number;
+}
+
 /**
  * 图片工厂
  * 职责：创建 FabricImage 对象（从 URL、File、快照等）
@@ -18,10 +26,17 @@ export class ImageFactory {
     /**
      * 从文件创建图片对象
      * 先上传到服务器获取 URL，再创建图片
+     * @returns 图片对象及原始文件信息
      */
-    static async fromFile(file: File): Promise<FabricImage> {
+    static async fromFile(file: File): Promise<ImageFromFileResult> {
         const url = await this.uploadFile(file);
-        return this.fromUrl(url);
+        const image = await this.fromUrl(url);
+        return {
+            image,
+            fileName: file.name,
+            naturalWidth: image.width || 0,
+            naturalHeight: image.height || 0,
+        };
     }
 
     /**

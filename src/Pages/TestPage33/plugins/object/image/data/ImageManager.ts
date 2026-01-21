@@ -1,5 +1,5 @@
 import { FabricImage, type FabricObject } from "fabric";
-import { Category, genId, type CanvasEditor, type HistoryRecord } from "../../../../core";
+import { Category, genId, type CanvasEditor, type HistoryRecord, type ImageObjectData } from "../../../../core";
 import { EditorMode } from "../../../mode/ModePlugin";
 import { ImageHistoryHandler } from "./ImageHistoryHandler";
 import { ImageRenderer } from "../render/ImageRenderer";
@@ -16,6 +16,9 @@ export interface AddImageConfig {
     recordHistory?: boolean;    // 是否记录历史，默认 true
     needSync?: boolean;         // 是否需要同步，默认 true
     setActive?: boolean;        // 是否设为选中，默认 true
+    fileName?: string;          // 原始文件名
+    naturalWidth?: number;      // 原始图片宽度
+    naturalHeight?: number;     // 原始图片高度
 }
 
 /** 删除图片的配置 */
@@ -75,10 +78,20 @@ export class ImageManager {
             recordHistory = true,
             needSync = true,
             setActive = true,
+            fileName,
+            naturalWidth,
+            naturalHeight,
         } = config ?? {};
 
-        // 1. 设置元数据
-        this.editor.metadata.set(img, { category: Category.Image, id });
+        // 1. 设置元数据（包含图片特有的文件信息）
+        const metadata: ImageObjectData = {
+            category: Category.Image,
+            id,
+            fileName,
+            naturalWidth,
+            naturalHeight,
+        };
+        this.editor.metadata.set(img, metadata);
 
         // 2. 添加到渲染器（会同时添加到画布和 objects Map）
         this.renderer.addImage(id, img);
@@ -198,10 +211,15 @@ export class ImageManager {
      */
     async addFromFile(file: File, config?: AddImageConfig): Promise<FabricImage | null> {
         try {
-            const img = await ImageFactory.fromFile(file);
-            this.configureNewImage(img);
-            this.add(img, config);
-            return img;
+            const { image, fileName, naturalWidth, naturalHeight } = await ImageFactory.fromFile(file);
+            this.configureNewImage(image);
+            this.add(image, {
+                ...config,
+                fileName,
+                naturalWidth,
+                naturalHeight,
+            });
+            return image;
         } catch (e) {
             console.error("[ImageManager] 从文件添加图片失败:", e);
             return null;
@@ -236,6 +254,11 @@ export class ImageManager {
 
     applyModeConfigToObject(obj: FabricObject, mode: EditorMode): void {
         this.renderer.applyModeConfigToObject(obj, mode);
+    }
+
+    /** 更新 hover 边框（zoom 变化时调用） */
+    updateHoverBorder(): void {
+        this.renderer.updateHoverBorder();
     }
 
     // ─── 序列化（公开） ─────────────────────────────────────────

@@ -120,10 +120,11 @@ export class ImagePlugin extends BasePlugin {
     }
   };
 
-  /** 缩放变化 - 更新标签位置 */
+  /** 缩放变化 - 更新标签位置和 hover 边框 */
   private onZoomChange = (): void => {
     const images = this.getSelectedImages();
     this.labelRenderer.show(images);
+    this.manager.updateHoverBorder();
   };
 
   // ─── 历史记录事件 ─────────────────────────────────────────

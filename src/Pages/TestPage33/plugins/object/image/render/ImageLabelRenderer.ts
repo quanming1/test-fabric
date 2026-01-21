@@ -1,6 +1,6 @@
 import { FabricText, Group, type Canvas, type FabricObject, FabricImage } from "fabric";
 import { BaseRenderer } from "../../../../core/render";
-import { Category, type ObjectMetadata } from "../../../../core";
+import { Category, type ObjectMetadata, type ImageObjectData } from "../../../../core";
 
 // ─── 类型定义 ─────────────────────────────────────────
 
@@ -203,8 +203,15 @@ export class ImageLabelRenderer extends BaseRenderer<LabelRenderData, LabelStyle
         return left > 0 ? text.slice(0, left) + "..." : "...";
     }
 
-    /** 从图片提取文件名 */
+    /** 从图片提取文件名（优先使用 metadata 中的 fileName） */
     private getFilename(target: FabricObject): string {
+        // 优先从 metadata 获取
+        const meta = this.metadata.get(target) as ImageObjectData | undefined;
+        if (meta?.fileName) {
+            return meta.fileName;
+        }
+
+        // 降级：从 URL 解析
         if (!(target instanceof FabricImage)) return "image";
 
         const src = (target as any).getSrc?.() || (target as any)._element?.src || "";
