@@ -196,6 +196,12 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
 
             // 更新缓存
             this.sizeCache.set(id, { width: pos.width, height: pos.height, zoom: currentZoom });
+
+            // 确保角标记点在区域上方
+            const marker = this.cornerMarkers.get(id);
+            if (marker) {
+                this.canvas.bringObjectToFront(marker);
+            }
         } else {
             // 只更新位置和角度
             group.set({ left: pos.left, top: pos.top, angle: pos.angle });

@@ -7,6 +7,7 @@ export { API } from "./types";
 export type {
     SyncEventType,
     SyncEventData,
+    ObjectExportData,
     SyncManagerOptions,
     SyncEventItem,
 } from "./types";

@@ -2,6 +2,8 @@
 // 核心类型（顶层导出，高频使用）
 // ═══════════════════════════════════════════════════════════════
 
+import type { ImageExportData } from "../../plugins/io/types";
+
 /**
  * 同步事件类型枚举
  * - client:change: 前端客户端发起的画布变更
@@ -10,19 +12,19 @@
 export type SyncEventType = "client:change" | "server:add_image";
 
 /**
- * 同步事件数据基础接口
- * 所有可同步的对象数据都应包含这些字段
+ * 对象导出数据的联合类型
+ * 目前只有图片类型，后续可扩展其他类型（如 TextExportData、ShapeExportData 等）
  */
-export interface SyncEventData {
-    /** 对象唯一标识 */
-    id: string;
-    /** 元数据，包含 is_delete 标记 */
-    metadata?: {
-        is_delete?: boolean;
-        [key: string]: unknown;
-    };
-    [key: string]: unknown;
-}
+export type ObjectExportData = ImageExportData;
+
+/**
+ * 同步事件数据
+ * = 对象导出数据 + client_id
+ */
+export type SyncEventData = ObjectExportData & {
+    /** 客户端唯一标识，用于过滤自己发出的事件 */
+    client_id?: string;
+};
 
 // ═══════════════════════════════════════════════════════════════
 // 推送端类型（发送到服务端的格式）
@@ -31,11 +33,13 @@ export interface SyncEventData {
 /**
  * 单个同步事件项（推送格式）
  */
-export interface SyncEventItem<T extends SyncEventData = SyncEventData> {
+export interface SyncEventItem {
+    /** 操作的对象 ID */
+    id: string;
     /** 事件类型 */
     event_type: SyncEventType;
     /** 事件数据 */
-    event_data: T;
+    event_data: SyncEventData;
 }
 
 
@@ -60,8 +64,8 @@ export namespace API {
      * 获取初始化数据的响应
      */
     export interface InitDataResponse {
-        /** 画布全量数据 */
-        canvasJSON: SyncEventData[] | null;
+        /** 画布全量数据（对象导出数据数组） */
+        canvasJSON: ObjectExportData[] | null;
         /** 当前序列号 */
         sequence_id: number;
     }

@@ -24,11 +24,9 @@ export type {
 export { SyncManager } from "./sync";
 export { API } from "./sync";
 export type {
-    SyncEvent,
     SyncEventType,
     SyncEventData,
-    ClientChangeData,
-    ServerAddImageData,
+    ObjectExportData,
     SyncManagerOptions,
 } from "./sync";
 

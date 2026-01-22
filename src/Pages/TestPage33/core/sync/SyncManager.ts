@@ -1,5 +1,6 @@
 import type { CanvasEditor } from "../editor/CanvasEditor";
 import type { HistoryRecord, HistoryEntry, ObjectSnapshot } from "../history/types";
+import type { ImageExportData } from "../../plugins/io/types";
 import type {
     SyncManagerOptions,
     SyncEventItem,
@@ -11,6 +12,9 @@ import type {
 
 let syncRecordIdCounter = 0;
 const genSyncRecordId = () => `sync_${Date.now()}_${++syncRecordIdCounter}`;
+
+/** 生成唯一的客户端 ID */
+const genClientId = () => `client_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
 const DEFAULT_OPTIONS: Required<SyncManagerOptions> = {
     apiBasePath: "http://localhost:3001/api/canvas/sync",
@@ -32,10 +36,13 @@ export class SyncManager {
     private eventSource: EventSource | null = null;            // SSE 连接
     private initialized = false;                               // 是否已初始化
     private localSequenceId = 0;                               // 本地版本号
+    private clientId: string;                                  // 客户端唯一标识
 
     constructor(editor: CanvasEditor, options?: SyncManagerOptions) {
         this.editor = editor;
         this.options = { ...DEFAULT_OPTIONS, ...options };
+        this.clientId = genClientId();
+        console.log("[SyncManager] clientId:", this.clientId);
     }
 
 
@@ -88,6 +95,12 @@ export class SyncManager {
      */
     async handleReceivedEvent(eventData: API.SSEEventData): Promise<void> {
         const { sequence_id, event_type, event_data } = eventData;
+
+        // 跳过自己发出的事件
+        if (event_data.client_id === this.clientId) {
+            console.log(`[SyncManager] 跳过自己的事件: client_id=${event_data.client_id}`);
+            return;
+        }
 
         // 版本控制：只处理比本地版本号大的事件
         if (sequence_id <= this.localSequenceId) {
@@ -195,15 +208,17 @@ export class SyncManager {
     }
 
     /**
-     * 将 SyncEventData 转换为 HistoryRecord
+     * 将 SyncEventData（ImageExportData + client_id）转换为 HistoryRecord
      */
     private convertToHistoryRecord(eventData: SyncEventData): HistoryRecord {
         const isDelete = eventData.metadata?.is_delete === true;
         const id = eventData.id;
-        const snapshot: ObjectSnapshot = { id, data: eventData };
+        // 移除 client_id，只保留对象导出数据
+        const { client_id, ...exportData } = eventData;
+        const snapshot: ObjectSnapshot = { id, data: exportData };
 
         // 根据 metadata.category 确定 pluginName，默认 "image"
-        const pluginName = (eventData.metadata as any)?.category ?? "image";
+        const pluginName = eventData.metadata?.category ?? "image";
 
         if (isDelete) {
             // 删除操作
@@ -259,11 +274,13 @@ export class SyncManager {
                 // 删除操作：使用 before 快照，标记 is_delete = true
                 if (record.before) {
                     for (const snapshot of record.before) {
-                        const exportData = snapshot.data as SyncEventData;
+                        const exportData = snapshot.data as ImageExportData;
                         events.push({
+                            id: snapshot.id,
                             event_type: "client:change",
                             event_data: {
                                 ...exportData,
+                                client_id: this.clientId,
                                 metadata: {
                                     ...exportData.metadata,
                                     is_delete: true,
@@ -276,11 +293,13 @@ export class SyncManager {
                 // add/modify 操作：使用 after 快照
                 if (record.after) {
                     for (const snapshot of record.after) {
-                        const exportData = snapshot.data as SyncEventData;
+                        const exportData = snapshot.data as ImageExportData;
                         events.push({
+                            id: snapshot.id,
                             event_type: "client:change",
                             event_data: {
                                 ...exportData,
+                                client_id: this.clientId,
                                 metadata: {
                                     ...exportData.metadata,
                                     is_delete: false,
