@@ -6,6 +6,7 @@ export { API } from "./types";
 // 导出类型
 export type {
     SyncEventType,
+    SyncEventData,
     SyncManagerOptions,
     SyncEventItem,
 } from "./types";

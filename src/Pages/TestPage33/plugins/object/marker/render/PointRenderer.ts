@@ -3,7 +3,7 @@ import { BaseRenderer } from "../../../../core/render";
 import type { PointData, PointStyle } from "../types";
 import { DEFAULT_POINT_STYLE } from "../types";
 import { Category, type ObjectMetadata } from "../../../../core";
-import { getFullTransformMatrix } from "../../../../utils";
+import { TransformHelper } from "../../../../utils";
 
 /**
  * 点标记渲染器
@@ -119,7 +119,7 @@ export class PointRenderer extends BaseRenderer<PointData, PointStyle, Group> {
         const localX = nx * w - w / 2;
         const localY = ny * h - h / 2;
 
-        const [a, b, c, d, tx, ty] = getFullTransformMatrix(this.canvas, target);
+        const [a, b, c, d, tx, ty] = TransformHelper.getAbsoluteMatrix(this.canvas, target);
         return {
             left: a * localX + c * localY + tx,
             top: b * localX + d * localY + ty,

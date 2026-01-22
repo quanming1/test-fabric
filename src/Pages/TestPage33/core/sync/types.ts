@@ -1,6 +1,3 @@
-import type { CanvasEditor } from "../editor/CanvasEditor";
-import type { ImageExportData } from "../../plugins/io/types";
-
 // ═══════════════════════════════════════════════════════════════
 // 核心类型（顶层导出，高频使用）
 // ═══════════════════════════════════════════════════════════════
@@ -12,6 +9,21 @@ import type { ImageExportData } from "../../plugins/io/types";
  */
 export type SyncEventType = "client:change" | "server:add_image";
 
+/**
+ * 同步事件数据基础接口
+ * 所有可同步的对象数据都应包含这些字段
+ */
+export interface SyncEventData {
+    /** 对象唯一标识 */
+    id: string;
+    /** 元数据，包含 is_delete 标记 */
+    metadata?: {
+        is_delete?: boolean;
+        [key: string]: unknown;
+    };
+    [key: string]: unknown;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // 推送端类型（发送到服务端的格式）
 // ═══════════════════════════════════════════════════════════════
@@ -19,11 +31,11 @@ export type SyncEventType = "client:change" | "server:add_image";
 /**
  * 单个同步事件项（推送格式）
  */
-export interface SyncEventItem {
-    /** 事件类型，固定为 "client:change" */
-    event_type: "client:change";
-    /** 事件数据，ImageExportData 格式 */
-    event_data: ImageExportData;
+export interface SyncEventItem<T extends SyncEventData = SyncEventData> {
+    /** 事件类型 */
+    event_type: SyncEventType;
+    /** 事件数据 */
+    event_data: T;
 }
 
 
@@ -48,8 +60,8 @@ export namespace API {
      * 获取初始化数据的响应
      */
     export interface InitDataResponse {
-        /** 画布全量数据，ImageExportData 数组 */
-        canvasJSON: ImageExportData[] | null;
+        /** 画布全量数据 */
+        canvasJSON: SyncEventData[] | null;
         /** 当前序列号 */
         sequence_id: number;
     }
@@ -68,7 +80,7 @@ export namespace API {
     export interface SSEEventData {
         sequence_id: number;
         event_type: string;
-        event_data: ImageExportData;
+        event_data: SyncEventData;
     }
 }
 

@@ -1,13 +1,16 @@
 import type { CanvasEditor } from "../editor/CanvasEditor";
-import type { HistoryRecord } from "../history/types";
+import type { HistoryRecord, HistoryEntry, ObjectSnapshot } from "../history/types";
 import type {
     SyncManagerOptions,
     SyncEventItem,
+    SyncEventData,
     API,
 } from "./types";
-import type { ImageExportData } from "../../plugins/io/types";
 
 // ─── 工具函数 ─────────────────────────────────────────
+
+let syncRecordIdCounter = 0;
+const genSyncRecordId = () => `sync_${Date.now()}_${++syncRecordIdCounter}`;
 
 const DEFAULT_OPTIONS: Required<SyncManagerOptions> = {
     apiBasePath: "http://localhost:3001/api/canvas/sync",
@@ -81,7 +84,7 @@ export class SyncManager {
 
     /**
      * 处理接收到的同步事件（SSE 推送）
-     * 使用 sequence_id 做版本控制，只处理比本地版本号大的事件
+     * 将事件转换为 HistoryRecord，通过 History 的 redo 逻辑应用
      */
     async handleReceivedEvent(eventData: API.SSEEventData): Promise<void> {
         const { sequence_id, event_type, event_data } = eventData;
@@ -97,47 +100,34 @@ export class SyncManager {
         // 更新本地版本号
         this.localSequenceId = sequence_id;
 
-        // 暂停历史记录
-        this.editor.history.pause();
-        try {
-            // 检查是否是删除操作
-            if (event_data.metadata?.is_delete) {
-                // 删除操作：从画布移除对象
-                const imagePlugin = this.editor.getPlugin<any>("image");
-                if (imagePlugin) {
-                    imagePlugin.remove([event_data.id], false);
-                }
-            } else {
-                // 添加/修改操作：导入到画布
-                const ioPlugin = this.editor.getPlugin<any>("io");
-                if (ioPlugin) {
-                    // 先检查是否已存在，存在则先删除
-                    const existingObj = this.editor.metadata.getById(event_data.id);
-                    if (existingObj) {
-                        const imagePlugin = this.editor.getPlugin<any>("image");
-                        if (imagePlugin) {
-                            imagePlugin.remove([event_data.id], false);
-                        }
-                    }
-                    // 导入新数据
-                    await ioPlugin.import([event_data], { clearCanvas: false });
-                }
-            }
-        } finally {
-            this.editor.history.resume();
+        // 打印变更前后的位置（调试用）
+        const id = event_data.id;
+        const existingObj = this.editor.metadata.getById(id);
+        if (existingObj) {
+            // 使用 calcTransformMatrix 获取绝对坐标，避免 ActiveSelection 局部坐标问题
+            const currentMatrix = existingObj.calcTransformMatrix();
+            console.log(`[SyncManager] 对象 ${id} 变更前位置: x=${currentMatrix[4]}, y=${currentMatrix[5]}`);
+        }
+        const newMatrix = (event_data as any).style?.matrix;
+        if (newMatrix) {
+            console.log(`[SyncManager] 对象 ${id} 变更后位置: x=${newMatrix[4]}, y=${newMatrix[5]}`);
         }
 
-        // 清空本地历史栈，避免状态不一致
-        this.editor.history.clear();
+        // 将 ImageExportData 转换为 HistoryRecord，通过 HistoryManager 应用
+        const record = this.convertToHistoryRecord(event_data);
+        await this.editor.history.applyRecord(record, "redo", { pauseRecord: true });
     }
 
     /**
      * 推送同步事件到服务端
-     * 将 HistoryRecord 转换为 SyncPushPayload 格式
+     * @param entry 历史记录
+     * @param options.isUndo 是否为撤销操作，撤销时会反转 entry
      */
-    async pushEvent(record: HistoryRecord | HistoryRecord[]): Promise<void> {
+    async pushEvent(entry: HistoryEntry, options?: { isUndo?: boolean }): Promise<void> {
         try {
-            const records = Array.isArray(record) ? record : [record];
+            const { isUndo = false } = options ?? {};
+            const targetEntry = isUndo ? this.createReversedEntry(entry) : entry;
+            const records = Array.isArray(targetEntry) ? targetEntry : [targetEntry];
             const events = this.convertToSyncEvents(records);
 
             if (events.length === 0) {
@@ -155,6 +145,103 @@ export class SyncManager {
         }
     }
 
+    // ─── 数据转换 ─────────────────────────────────────────
+
+    /**
+     * 创建反向的 entry（用于撤销同步）
+     */
+    private createReversedEntry(entry: HistoryEntry): HistoryEntry {
+        if (Array.isArray(entry)) {
+            return entry.map((record) => this.createReversedRecord(record)).reverse();
+        }
+        return this.createReversedRecord(entry);
+    }
+
+    /**
+     * 创建反向的 record
+     * - add → remove
+     * - remove → add
+     * - modify → modify（before/after 互换）
+     */
+    private createReversedRecord(record: HistoryRecord): HistoryRecord {
+        const reversed: HistoryRecord = {
+            ...record,
+            id: genSyncRecordId(),
+            timestamp: Date.now(),
+        };
+
+        switch (record.type) {
+            case "add":
+                reversed.type = "remove";
+                reversed.before = record.after;
+                reversed.after = undefined;
+                break;
+            case "remove":
+                reversed.type = "add";
+                reversed.after = record.before;
+                reversed.before = undefined;
+                break;
+            case "modify":
+                reversed.before = record.after;
+                reversed.after = record.before;
+                break;
+        }
+
+        return reversed;
+    }
+
+    /**
+     * 将 SyncEventData 转换为 HistoryRecord
+     */
+    private convertToHistoryRecord(eventData: SyncEventData): HistoryRecord {
+        const isDelete = eventData.metadata?.is_delete === true;
+        const id = eventData.id;
+        const snapshot: ObjectSnapshot = { id, data: eventData };
+
+        // 根据 metadata.category 确定 pluginName，默认 "image"
+        const pluginName = (eventData.metadata as any)?.category ?? "image";
+
+        if (isDelete) {
+            // 删除操作
+            return {
+                id: `sync_${Date.now()}`,
+                type: "remove",
+                pluginName,
+                timestamp: Date.now(),
+                objectIds: [id],
+                before: [snapshot],
+                needSync: false,
+            };
+        } else {
+            // 检查是否已存在（modify）还是新增（add）
+            const existingObj = this.editor.metadata.getById(id);
+            if (existingObj) {
+                // 修改操作
+                return {
+                    id: `sync_${Date.now()}`,
+                    type: "modify",
+                    pluginName,
+                    timestamp: Date.now(),
+                    objectIds: [id],
+                    after: [snapshot],
+                    needSync: false,
+                };
+            } else {
+                // 添加操作
+                return {
+                    id: `sync_${Date.now()}`,
+                    type: "add",
+                    pluginName,
+                    timestamp: Date.now(),
+                    objectIds: [id],
+                    after: [snapshot],
+                    needSync: false,
+                };
+            }
+        }
+    }
+
+
     /**
      * 将 HistoryRecord 转换为 SyncEventItem[]
      * - add/modify: 使用 after 快照，is_delete = false
@@ -168,7 +255,7 @@ export class SyncManager {
                 // 删除操作：使用 before 快照，标记 is_delete = true
                 if (record.before) {
                     for (const snapshot of record.before) {
-                        const exportData = snapshot.data as ImageExportData;
+                        const exportData = snapshot.data as SyncEventData;
                         events.push({
                             event_type: "client:change",
                             event_data: {
@@ -185,7 +272,7 @@ export class SyncManager {
                 // add/modify 操作：使用 after 快照
                 if (record.after) {
                     for (const snapshot of record.after) {
-                        const exportData = snapshot.data as ImageExportData;
+                        const exportData = snapshot.data as SyncEventData;
                         events.push({
                             event_type: "client:change",
                             event_data: {

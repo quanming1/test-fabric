@@ -1,7 +1,8 @@
-import { type FabricObject, util } from "fabric";
+import { type FabricObject } from "fabric";
 import { BaseHistoryHandler, Category, type HistoryRecord, type ObjectSnapshot, type HistoryManager, type CanvasEditor, type ImageObjectData } from "../../../../core";
 import { ImageFactory } from "../helper";
-import type { ImageExportData, StyleData } from "../../../io/types";
+import type { ImageExportData } from "../../../io/types";
+import { TransformHelper } from "../../../../utils";
 
 // 前向声明，避免循环依赖
 import type { ImageManager } from "./ImageManager";
@@ -43,11 +44,16 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
 
     /**
      * 创建完整快照（ImageExportData 格式）
+     * 
+     * 注意：使用 TransformHelper.getAbsoluteMatrix 而非 obj.calcTransformMatrix()
+     * 原因：当对象在 ActiveSelection（多选）中时，calcTransformMatrix() 返回的是
+     *       相对于 ActiveSelection 的局部坐标，而非画布绝对坐标。
+     *       getAbsoluteMatrix 会组合 ActiveSelection 的变换矩阵，确保返回正确的绝对坐标。
      */
     createSnapshot(obj: FabricObject): ObjectSnapshot {
         const metadata = this.editor.metadata.get(obj) as ImageObjectData | undefined;
         const id = metadata?.id ?? "";
-        const matrix = obj.calcTransformMatrix();
+        const matrix = TransformHelper.getAbsoluteMatrix(this.editor.canvas, obj);
 
         const data: ImageExportData = {
             id,
@@ -211,13 +217,9 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
                 continue;
             }
 
-            // 从 src 创建图片
             const img = await ImageFactory.fromUrl(metadata.src);
+            TransformHelper.applyMatrix(img, style.matrix, { convertToLocal: false });
 
-            // 从矩阵恢复变换
-            this.applyMatrixToImage(img, style.matrix);
-
-            // 通过 manager.add 添加，不记录历史
             this.manager.add(img, {
                 id: snapshot.id,
                 recordHistory: false,
@@ -239,46 +241,11 @@ export class ImageHistoryHandler extends BaseHistoryHandler<FabricObject> {
             if (!obj) continue;
 
             const exportData = snapshot.data as ImageExportData;
-            const style = exportData.style;
+            if (!exportData.style?.matrix) continue;
 
-            if (style?.matrix) {
-                // 从矩阵恢复变换
-                const options = util.qrDecompose(style.matrix);
-
-                obj.set({
-                    flipX: false,
-                    flipY: false,
-                    scaleX: options.scaleX,
-                    scaleY: options.scaleY,
-                    skewX: options.skewX,
-                    skewY: options.skewY,
-                    angle: options.angle,
-                    left: options.translateX,
-                    top: options.translateY,
-                });
-            }
-
+            TransformHelper.applyMatrix(obj, exportData.style.matrix, { setOrigin: false });
             obj.setCoords();
         }
         this.editor.canvas.requestRenderAll();
-    }
-
-    /**
-     * 从变换矩阵恢复图片位置和缩放
-     */
-    private applyMatrixToImage(img: FabricObject, matrix: StyleData["matrix"]): void {
-        const options = util.qrDecompose(matrix);
-
-        img.set({
-            originX: "center",
-            originY: "center",
-            scaleX: options.scaleX,
-            scaleY: options.scaleY,
-            skewX: options.skewX,
-            skewY: options.skewY,
-            angle: options.angle,
-            left: options.translateX,
-            top: options.translateY,
-        });
     }
 }

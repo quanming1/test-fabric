@@ -3,7 +3,7 @@ import { BaseRenderer } from "../../../../core/render";
 import type { RegionData, RegionStyle, PointStyle, RenderConfig } from "../types";
 import { DEFAULT_REGION_STYLE, DEFAULT_POINT_STYLE } from "../types";
 import { Category, type ObjectMetadata } from "../../../../core";
-import { getFullTransformMatrix, extractScaleAndAngle } from "../../../../utils";
+import { TransformHelper } from "../../../../utils";
 
 /** 边框小方块配置 */
 const TARGET_BLOCK_SIZE = 4;  // 目标方块大小（屏幕像素）
@@ -454,9 +454,9 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
         const localW = nw * tw;
         const localH = nh * th;
 
-        const matrix = getFullTransformMatrix(this.canvas, target);
+        const matrix = TransformHelper.getAbsoluteMatrix(this.canvas, target);
         const [a, b, c, d, tx, ty] = matrix;
-        const { scaleX, scaleY, angle } = extractScaleAndAngle(matrix);
+        const { scaleX, scaleY, angle } = TransformHelper.extractScaleAndAngle(matrix);
 
         return {
             left: a * localX + c * localY + tx,

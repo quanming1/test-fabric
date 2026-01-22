@@ -103,21 +103,34 @@ export class HistoryManager {
 
   /**
    * 应用历史记录到对应插件
+   * @param record 历史记录
+   * @param action 操作类型
+   * @param options 配置选项
    */
-  private async applyRecord(record: HistoryRecord, action: "undo" | "redo"): Promise<void> {
+  async applyRecord(
+    record: HistoryRecord,
+    action: "undo" | "redo",
+    options?: { pauseRecord?: boolean }
+  ): Promise<void> {
+    const { pauseRecord = false } = options ?? {};
+
     const plugin = this.editor.getPlugin(record.pluginName);
     if (!plugin) {
       console.warn(`[History] Plugin "${record.pluginName}" not found`);
       return;
     }
 
-    if (action === "undo" && typeof (plugin as any).applyUndo === "function") {
-      await (plugin as any).applyUndo(record);
-    } else if (action === "redo" && typeof (plugin as any).applyRedo === "function") {
-      await (plugin as any).applyRedo(record);
+    if (pauseRecord) this.pause();
+    try {
+      if (action === "undo" && typeof (plugin as any).applyUndo === "function") {
+        await (plugin as any).applyUndo(record);
+      } else if (action === "redo" && typeof (plugin as any).applyRedo === "function") {
+        await (plugin as any).applyRedo(record);
+      }
+      this.editor.canvas.requestRenderAll();
+    } finally {
+      if (pauseRecord) this.resume();
     }
-
-    this.editor.canvas.requestRenderAll();
   }
 
   /**
@@ -147,10 +160,9 @@ export class HistoryManager {
     this.editor.eventBus.emit("history:undo:after", entry as any);
     this.emitChange();
 
-    // 同步撤销操作：构造反向记录并推送
+    // 同步撤销操作
     if (this.syncManager && this.shouldSyncEntry(entry)) {
-      const reversedEntry = this.createReversedEntry(entry);
-      this.syncManager.pushEvent(reversedEntry).catch((err: Error) => {
+      this.syncManager.pushEvent(entry, { isUndo: true }).catch((err: Error) => {
         console.error("[HistoryManager] 撤销同步推送失败:", err);
       });
     }
@@ -199,50 +211,6 @@ export class HistoryManager {
       return entry.some((record) => record.needSync);
     }
     return entry.needSync === true;
-  }
-
-  /**
-   * 创建反向的 entry（用于撤销同步）
-   */
-  private createReversedEntry(entry: HistoryEntry): HistoryEntry {
-    if (Array.isArray(entry)) {
-      // 批处理：反转顺序并反转每条记录
-      return entry.map((record) => this.createReversedRecord(record)).reverse();
-    }
-    return this.createReversedRecord(entry);
-  }
-
-  /**
-   * 创建反向的 record
-   * - add 的反向是 remove
-   * - remove 的反向是 add
-   * - modify 的反向是 modify，但 before 和 after 互换
-   */
-  private createReversedRecord(record: HistoryRecord): HistoryRecord {
-    const reversed: HistoryRecord = {
-      ...record,
-      id: genRecordId(),
-      timestamp: Date.now(),
-    };
-
-    switch (record.type) {
-      case "add":
-        reversed.type = "remove";
-        reversed.before = record.after;
-        reversed.after = undefined;
-        break;
-      case "remove":
-        reversed.type = "add";
-        reversed.after = record.before;
-        reversed.before = undefined;
-        break;
-      case "modify":
-        reversed.before = record.after;
-        reversed.after = record.before;
-        break;
-    }
-
-    return reversed;
   }
 
   /**
