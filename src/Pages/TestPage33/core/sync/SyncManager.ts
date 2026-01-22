@@ -116,6 +116,10 @@ export class SyncManager {
         // 将 ImageExportData 转换为 HistoryRecord，通过 HistoryManager 应用
         const record = this.convertToHistoryRecord(event_data);
         await this.editor.history.applyRecord(record, "redo", { pauseRecord: true });
+
+        // 收到远程事件后清空本地历史记录
+        this.editor.history.clear();
+        console.log("[SyncManager] 已清空本地历史记录");
     }
 
     /**
