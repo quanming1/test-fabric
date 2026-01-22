@@ -42,6 +42,8 @@ export interface PointData {
     /** 归一化坐标 (0~1) */
     nx: number;
     ny: number;
+    /** 主题颜色 */
+    theme?: string;
 }
 
 // ─── Region 类型 ─────────────────────────────────────────
@@ -78,6 +80,8 @@ export interface RegionData {
     ny: number;
     nw: number;
     nh: number;
+    /** 主题颜色 */
+    theme?: string;
 }
 
 // ─── 插件配置 ─────────────────────────────────────────

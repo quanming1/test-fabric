@@ -22,7 +22,8 @@ export class PointRenderer extends BaseRenderer<PointData, PointStyle, Group> {
         const pos = this.getPosition(data);
         if (!pos) return;
 
-        const { radius, fill, stroke, strokeWidth, textColor, fontSize } = this.style;
+        const { radius, stroke, strokeWidth, textColor, fontSize } = this.style;
+        const fill = data.theme ?? this.style.fill;
 
         const circle = new Circle({
             radius, fill, stroke, strokeWidth,
@@ -41,8 +42,8 @@ export class PointRenderer extends BaseRenderer<PointData, PointStyle, Group> {
             excludeFromExport: true, hoverCursor: "pointer",
         });
 
-        this.metadata.set(group, { category: Category.Marker, id });
-        this.bindHover(group, circle);
+        this.metadata.set(group, { category: Category.Marker, id, theme: data.theme });
+        this.bindHover(group, circle, data.theme);
         this.addObject(id, group);
     }
 
@@ -84,13 +85,14 @@ export class PointRenderer extends BaseRenderer<PointData, PointStyle, Group> {
 
     // ─── Private ─────────────────────────────────────────
 
-    private bindHover(group: Group, circle: Circle): void {
-        const { hoverScale, hoverFill, fill } = this.style;
+    private bindHover(group: Group, circle: Circle, theme?: string): void {
+        const { hoverScale, hoverFill } = this.style;
+        const fill = theme ?? this.style.fill;
 
         group.on("mouseover", () => {
             const inverseZoom = this.getInverseZoom();
             group.set({ scaleX: inverseZoom * hoverScale, scaleY: inverseZoom * hoverScale });
-            circle.set("fill", hoverFill);
+            circle.set("fill", theme ?? hoverFill);
             this.requestRender();
         });
 

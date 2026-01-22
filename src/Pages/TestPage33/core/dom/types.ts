@@ -7,6 +7,8 @@ import type { CanvasEditor } from "../editor/CanvasEditor";
 export interface DOMLayerConfig {
     /** 唯一标识 */
     id: string;
+    /** 层级，数值越大越靠上 */
+    zIndex: number;
     /** 可见性：布尔值或返回布尔值的函数 */
     visible?: boolean | (() => boolean);
 }
@@ -24,4 +26,12 @@ export interface DOMLayerProps {
 export interface DOMLayer {
     config: DOMLayerConfig;
     component: ComponentType<DOMLayerProps>;
+}
+
+/**
+ * DOM 图层管理器事件
+ */
+export interface DOMLayerEvents {
+    /** 图层列表变化 */
+    "layer:change": void;
 }

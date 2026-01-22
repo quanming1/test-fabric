@@ -32,6 +32,7 @@ export class RegionManager {
     private drawStartY = 0;
     private drawTarget: FabricObject | null = null;
     private drawTargetId: string | null = null;
+    private drawTheme: string | undefined = undefined;
 
     constructor(options: RegionManagerOptions) {
         this.eventBus = options.eventBus;
@@ -55,17 +56,18 @@ export class RegionManager {
     }
 
     /** 开始绘制区域 */
-    startDraw(target: FabricObject, targetId: string, scenePt: { x: number; y: number }): void {
+    startDraw(target: FabricObject, targetId: string, scenePt: { x: number; y: number }, theme?: string): void {
         this.isDrawing = true;
         this.drawTarget = target;
         this.drawTargetId = targetId;
+        this.drawTheme = theme;
 
         // 裁剪起点到目标边界内
         const clampedPt = this.clampToTargetBounds(target, scenePt);
         this.drawStartX = clampedPt.x;
         this.drawStartY = clampedPt.y;
 
-        this.renderer.createPreview(clampedPt);
+        this.renderer.createPreview(clampedPt, theme);
     }
 
     /** 更新绘制预览 */
@@ -116,12 +118,13 @@ export class RegionManager {
         const isDrag = dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD;
 
         if (isDrag && this.drawTarget && this.drawTargetId) {
-            this.add(this.drawTarget, this.drawTargetId, { x: this.drawStartX, y: this.drawStartY }, clampedPt);
+            this.add(this.drawTarget, this.drawTargetId, { x: this.drawStartX, y: this.drawStartY }, clampedPt, this.drawTheme);
         }
 
         this.isDrawing = false;
         this.drawTarget = null;
         this.drawTargetId = null;
+        this.drawTheme = undefined;
 
         return isDrag;
     }
@@ -137,7 +140,8 @@ export class RegionManager {
         target: FabricObject,
         targetId: string,
         startPt: { x: number; y: number },
-        endPt: { x: number; y: number }
+        endPt: { x: number; y: number },
+        theme?: string
     ): RegionData | null {
         const w = target.width ?? 0;
         const h = target.height ?? 0;
@@ -166,7 +170,7 @@ export class RegionManager {
 
         if (nw < 0.01 || nh < 0.01) return null;
 
-        const region: RegionData = { id: genId("region"), targetId, nx, ny, nw, nh };
+        const region: RegionData = { id: genId("region"), targetId, nx, ny, nw, nh, theme };
 
         this.regions.push(region);
         this.historyHandler.recordAddRegion(region);

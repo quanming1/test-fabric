@@ -1,2 +1,2 @@
 export { DOMLayerManager } from "./DOMLayerManager";
-export type { DOMLayer, DOMLayerConfig, DOMLayerProps } from "./types";
+export type { DOMLayer, DOMLayerConfig, DOMLayerProps, DOMLayerEvents } from "./types";

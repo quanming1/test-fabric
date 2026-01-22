@@ -26,6 +26,8 @@ export interface ObjectData {
     id?: string;
     /** 是否已删除 */
     is_delete?: boolean;
+    /** 主题颜色（用于标记点/区域） */
+    theme?: string;
 }
 
 /**

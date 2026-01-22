@@ -7,6 +7,9 @@ import { Category, type MarkPoint, type HistoryRecord } from "../../../core";
 import { EditorMode, ModePlugin } from "../../mode/ModePlugin";
 import { MarkerPluginState } from "./helper/MarkerPluginState";
 
+/** 默认主题颜色 */
+const DEFAULT_THEME = "#ff645d";
+
 /** 默认可标记的分类：矩形和图片 */
 const DEFAULT_MARKABLE_CATEGORIES: Category[] = [Category.DrawRect, Category.Image];
 
@@ -39,6 +42,8 @@ export class MarkerPlugin extends BasePlugin {
     private state: MarkerPluginState = null!;
     /** 进入 RangeSelect 前的模式，用于退出时恢复 */
     private lastMode: EditorMode | null = null;
+    /** 当前主题颜色 */
+    private currentTheme: string = DEFAULT_THEME;
 
     constructor(options?: MarkerPluginOptions) {
         super();
@@ -86,7 +91,7 @@ export class MarkerPlugin extends BasePlugin {
 
     /** 在目标对象的场景坐标处添加点标记 */
     addMarker(target: FabricObject, targetId: string, scenePt: { x: number; y: number }): MarkPoint | null {
-        return this.pointManager.add(target, targetId, scenePt);
+        return this.pointManager.add(target, targetId, scenePt, this.currentTheme);
     }
 
     /** 在目标对象上添加区域标记（起点到终点） */
@@ -96,7 +101,7 @@ export class MarkerPlugin extends BasePlugin {
         startPt: { x: number; y: number },
         endPt: { x: number; y: number }
     ): RegionData | null {
-        return this.regionManager.add(target, targetId, startPt, endPt);
+        return this.regionManager.add(target, targetId, startPt, endPt, this.currentTheme);
     }
 
     /** 移除指定 ID 的点标记 */
@@ -132,6 +137,16 @@ export class MarkerPlugin extends BasePlugin {
     /** 更新区域标记样式 */
     setRegionStyle(style: Partial<RegionStyle>): void {
         this.regionManager.setStyle(style);
+    }
+
+    /** 设置当前主题颜色（新创建的标记将使用此颜色） */
+    setTheme(theme: string): void {
+        this.currentTheme = theme;
+    }
+
+    /** 获取当前主题颜色 */
+    getTheme(): string {
+        return this.currentTheme;
     }
 
     // ─── 序列化 API（供 CanvasEditor 调用） ─────────────────────────────────────────
@@ -369,7 +384,7 @@ export class MarkerPlugin extends BasePlugin {
             if (!targetId) return;
 
             const scenePt = this.canvas.getScenePoint(e);
-            this.regionManager.startDraw(target, targetId, scenePt);
+            this.regionManager.startDraw(target, targetId, scenePt, this.currentTheme);
 
             e.preventDefault();
             e.stopPropagation();

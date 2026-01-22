@@ -1,78 +1,116 @@
-import React, { useMemo, useState, useRef, useEffect } from "react";
+import React from "react";
 import { Tooltip } from "antd";
-import {
-  DragOutlined,
-  BorderOutlined,
-  DeleteOutlined,
-  SelectOutlined,
-  PictureOutlined,
-  GatewayOutlined,
-  DownloadOutlined,
-  UploadOutlined,
-  ExportOutlined,
-} from "@ant-design/icons";
+import { SelectOutlined, PictureOutlined, GatewayOutlined } from "@ant-design/icons";
 import type { ModePlugin } from "../mode/ModePlugin";
-import type { MarkerPlugin } from "../object/marker/MarkerPlugin";
 import type { ImagePlugin } from "../object/image/ImagePlugin";
-import type { ImportExportPlugin } from "../io/ImportExportPlugin";
+import type { MarkerPlugin } from "../object/marker/MarkerPlugin";
 import { EditorMode } from "../mode/ModePlugin";
 import { useEditorEvent } from "../../hooks";
-import styles from "../../index.module.scss";
 import type { DOMLayerProps } from "../../core";
 import { openFilePicker } from "../../utils";
 
-interface ToolItem {
-  key: string;
-  icon: React.ReactNode;
-  tooltip: string;
-  onClick?: () => void;
-  danger?: boolean;
-  mode?: EditorMode;
-}
+const containerStyle: React.CSSProperties = {
+  position: "absolute",
+  bottom: 24,
+  left: "50%",
+  transform: "translateX(-50%)",
+  display: "flex",
+  alignItems: "center",
+  gap: 4,
+  padding: 4,
+  background: "#fff",
+  borderRadius: 12,
+  boxShadow: "0 4px 16px rgba(0, 0, 0, 0.1)",
+  zIndex: 10,
+};
+
+const btnStyle: React.CSSProperties = {
+  width: 40,
+  height: 40,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  border: "none",
+  background: "transparent",
+  borderRadius: 8,
+  cursor: "pointer",
+  color: "#333",
+  fontSize: 18,
+  transition: "all 0.15s",
+};
+
+const activeBtnStyle: React.CSSProperties = {
+  ...btnStyle,
+  background: "#f5f5f5",
+};
+
+const dividerStyle: React.CSSProperties = {
+  width: 1,
+  height: 24,
+  background: "#e5e5e5",
+  margin: "0 8px",
+};
+
+const colorDotStyle = (color: string, active: boolean): React.CSSProperties => ({
+  width: 20,
+  height: 20,
+  borderRadius: "50%",
+  background: color,
+  cursor: "pointer",
+  border: active ? "2px solid #333" : "2px solid transparent",
+  boxSizing: "border-box",
+});
+
+const hintTextStyle: React.CSSProperties = {
+  fontSize: 14,
+  color: "rgba(0, 0, 0, 0.65)",
+  marginLeft: 8,
+  whiteSpace: "nowrap",
+};
+
+const exitBtnStyle: React.CSSProperties = {
+  padding: "6px 16px",
+  fontSize: 14,
+  color: "#333",
+  background: "#f5f5f5",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  marginLeft: 8,
+  transition: "background 0.15s",
+};
+
+const colors = [
+  { key: "red", color: "#ff645d" },
+  { key: "orange", color: "#ffb500" },
+  { key: "green", color: "#00f34a" },
+  { key: "blue", color: "#00aeff" },
+];
 
 /**
- * 画布工具栏组件
+ * 底部工具栏组件
  */
 export const Toolbar: React.FC<DOMLayerProps> = ({ editor }) => {
   const modePlugin = editor?.getPlugin<ModePlugin>("mode");
-  const [showModePopup, setShowModePopup] = useState(false);
-  const modeButtonRef = useRef<HTMLDivElement>(null);
-
+  const markerPlugin = editor?.getPlugin<MarkerPlugin>("marker");
   const modeData = useEditorEvent(editor, "mode:change", { mode: EditorMode.Select });
   const currentMode = modeData?.mode ?? EditorMode.Select;
+  const [selectedColor, setSelectedColor] = React.useState("red");
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (modeButtonRef.current && !modeButtonRef.current.contains(e.target as Node)) {
-        setShowModePopup(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  // 初始化时设置默认颜色
+  React.useEffect(() => {
+    markerPlugin?.setTheme(colors[0].color);
+  }, [markerPlugin]);
 
-  const handleModeChange = (mode: EditorMode) => {
-    modePlugin?.setMode(mode);
-    setShowModePopup(false);
+  const handleColorChange = (key: string, color: string) => {
+    setSelectedColor(key);
+    markerPlugin?.setTheme(color);
   };
 
-  const modeOptions = [
-    { mode: EditorMode.Select, icon: <SelectOutlined />, label: "选择模式" },
-    { mode: EditorMode.Pan, icon: <DragOutlined />, label: "拖拽模式" },
-    { mode: EditorMode.DrawRect, icon: <BorderOutlined />, label: "绘制矩形" },
-    { mode: EditorMode.RangeSelect, icon: <GatewayOutlined />, label: "区域选择" },
-  ];
+  const isRangeSelectMode = currentMode === EditorMode.RangeSelect;
 
-  const getCurrentModeIcon = () => {
-    const option = modeOptions.find((opt) => opt.mode === currentMode);
-    return option?.icon ?? <SelectOutlined />;
-  };
-
-  const handleClearAll = () => {
-    if (!editor) return;
-    editor.canvas.getObjects().forEach((obj) => editor.canvas.remove(obj));
-    editor.canvas.requestRenderAll();
-    editor.getPlugin<MarkerPlugin>("marker")?.clearMarkers();
+  const handleSelectMode = () => {
+    modePlugin?.setMode(EditorMode.Select);
   };
 
   const handleUploadImage = async () => {
@@ -82,135 +120,89 @@ export const Toolbar: React.FC<DOMLayerProps> = ({ editor }) => {
     }
   };
 
-  const handleExport = () => {
-    editor?.getPlugin<ImportExportPlugin>("io")?.export({ download: "canvas.json" });
+  const handleRangeSelectMode = () => {
+    modePlugin?.setMode(EditorMode.RangeSelect);
   };
 
-  const handleImport = () => {
-    editor?.getPlugin<ImportExportPlugin>("io")?.import();
+  const handleExit = () => {
+    // 退出框选模式，回到选择模式
+    modePlugin?.setMode(EditorMode.Select);
   };
 
-  const handleExportImage = async () => {
-    const imagePlugin = editor?.getPlugin<ImagePlugin>("image");
-    if (!imagePlugin) return;
-
-    const activeObj = editor?.canvas.getActiveObject();
-    const imageId = activeObj ? editor?.metadata.getField(activeObj, "id") : null;
-    if (!imageId) {
-      console.warn("请先选中一张图片");
-      return;
-    }
-
-    const result = await imagePlugin.exportWithMarkers(imageId);
-    if (result) {
-      const link = document.createElement("a");
-      link.href = result.dataUrl;
-      link.download = `export_${imageId}.png`;
-      link.click();
-    }
-  };
-
-  const toolGroups: ToolItem[][] = useMemo(
-    () => [
-      [
-        {
-          key: "upload-image",
-          icon: <PictureOutlined />,
-          tooltip: "上传图片",
-          onClick: handleUploadImage,
-        },
-      ],
-      [
-        {
-          key: "export",
-          icon: <DownloadOutlined />,
-          tooltip: "导出 JSON",
-          onClick: handleExport,
-        },
-        {
-          key: "import",
-          icon: <UploadOutlined />,
-          tooltip: "导入 JSON",
-          onClick: handleImport,
-        },
-        {
-          key: "export-image",
-          icon: <ExportOutlined />,
-          tooltip: "导出选中图片（含标记）",
-          onClick: handleExportImage,
-        },
-      ],
-      [
-        {
-          key: "clear",
-          icon: <DeleteOutlined />,
-          tooltip: "清空画布",
-          onClick: handleClearAll,
-          danger: true,
-        },
-      ],
-    ],
-    [editor],
-  );
-
-  const handleClick = (item: ToolItem) => {
-    if (item.mode !== undefined) {
-      handleModeChange(item.mode);
-    } else if (item.onClick) {
-      item.onClick();
-    }
-  };
-
-  const isActive = (item: ToolItem): boolean => {
-    return item.mode !== undefined && item.mode === currentMode;
-  };
+  const tools = [
+    {
+      key: "select",
+      icon: <SelectOutlined />,
+      tooltip: "选择模式",
+      onClick: handleSelectMode,
+      active: currentMode === EditorMode.Select,
+    },
+    {
+      key: "upload",
+      icon: <PictureOutlined />,
+      tooltip: "上传图片",
+      onClick: handleUploadImage,
+      active: false,
+    },
+    {
+      key: "range-select",
+      icon: <GatewayOutlined />,
+      tooltip: "框选模式",
+      onClick: handleRangeSelectMode,
+      active: currentMode === EditorMode.RangeSelect,
+    },
+  ];
 
   return (
-    <div className={styles.toolbarLeft}>
-      <div ref={modeButtonRef} className={styles.modeButtonWrapper}>
-        <button
-          className={`${styles.toolBtn} ${styles.active}`}
-          onClick={() => setShowModePopup(!showModePopup)}
-        >
-          {getCurrentModeIcon()}
-        </button>
-        {showModePopup && (
-          <div className={styles.modePopup}>
-            {modeOptions.map((option) => (
+    <div style={containerStyle}>
+      {/* 工具按钮 */}
+      {tools.map((tool) => (
+        <Tooltip key={tool.key} title={tool.tooltip} placement="top">
+          <button
+            style={tool.active ? activeBtnStyle : btnStyle}
+            onClick={tool.onClick}
+            onMouseEnter={(e) => {
+              if (!tool.active) e.currentTarget.style.background = "#f5f5f5";
+            }}
+            onMouseLeave={(e) => {
+              if (!tool.active) e.currentTarget.style.background = "transparent";
+            }}
+          >
+            {tool.icon}
+          </button>
+        </Tooltip>
+      ))}
+
+      {/* 框选模式下展开的内容 */}
+      {isRangeSelectMode && (
+        <>
+          <div style={dividerStyle} />
+
+          {/* 颜色选择 */}
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {colors.map((c) => (
               <div
-                key={option.mode}
-                className={`${styles.modeOption} ${currentMode === option.mode ? styles.active : ""}`}
-                onClick={() => handleModeChange(option.mode)}
-              >
-                {option.icon}
-                <span>{option.label}</span>
-              </div>
+                key={c.key}
+                style={colorDotStyle(c.color, selectedColor === c.key)}
+                onClick={() => handleColorChange(c.key, c.color)}
+              />
             ))}
           </div>
-        )}
-      </div>
 
-      <div className={styles.toolDivider} />
+          {/* 提示文字 */}
+          <span style={hintTextStyle}>点击或选择编辑的区域</span>
 
-      {toolGroups.map((group, groupIndex) => (
-        <React.Fragment key={groupIndex}>
-          {groupIndex > 0 && <div className={styles.toolDivider} />}
-          {group.map((item) => (
-            <Tooltip key={item.key} title={item.tooltip} placement="right">
-              <button
-                className={`
-                  ${styles.toolBtn} 
-                  ${item.danger ? styles.danger : ""} 
-                  ${isActive(item) ? styles.active : ""}
-                `}
-                onClick={() => handleClick(item)}
-              >
-                {item.icon}
-              </button>
-            </Tooltip>
-          ))}
-        </React.Fragment>
-      ))}
+          {/* 退出按钮 */}
+          <button
+            style={exitBtnStyle}
+            onClick={handleExit}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#e8e8e8")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#f5f5f5")}
+          >
+            退出
+          </button>
+        </>
+      )}
     </div>
   );
 };

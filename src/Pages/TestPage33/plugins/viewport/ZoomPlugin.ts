@@ -55,8 +55,14 @@ export class ZoomPlugin extends BasePlugin {
     this.eventBus.on("sync:initialized", this.onSyncInitialized);
 
     // 注册 DOM 图层
-    this.editor.domLayer.register("loading-overlay", LoadingOverlay);
-    this.editor.domLayer.register("zoom-bar", ZoomBar);
+    this.editor.domLayer.register("loading-overlay", LoadingOverlay, {
+      zIndex: 1000,
+      visible: true,
+    });
+    this.editor.domLayer.register("zoom-bar", ZoomBar, {
+      zIndex: 100,
+      visible: true,
+    });
   }
 
   private onWheel = (opt: TPointerEventInfo<WheelEvent>): void => {

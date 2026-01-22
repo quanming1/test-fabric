@@ -65,7 +65,10 @@ export class SelectionPlugin extends BasePlugin {
     this.eventBus.on("zoom:change", this.updateToolbar);
 
     // 注册浮动工具栏 DOM 图层
-    this.editor.domLayer.register("floating-toolbar", FloatingToolbar);
+    this.editor.domLayer.register("floating-toolbar", FloatingToolbar, {
+      zIndex: 200,
+      visible: true,
+    });
   }
 
   private onSelectionCreated = (): void => {

@@ -107,7 +107,8 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
         const pos = this.getTransformedRect(data);
         if (!pos) return;
 
-        const { fill, stroke } = this.style;
+        const { fill } = this.style;
+        const stroke = data.theme ?? this.style.stroke;
 
         // 创建边框小方块
         const blocks = this.createBorderBlocks(pos.width, pos.height, stroke, inverseZoom);
@@ -128,12 +129,12 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
             excludeFromExport: true, hoverCursor: "move",
         });
 
-        this.metadata.set(group, { category: Category.Region, id });
+        this.metadata.set(group, { category: Category.Region, id, theme: data.theme });
         this.addObject(id, group);
 
         // 创建右下角标记点
         const cornerPos = this.getCornerPosition(pos);
-        this.createCornerMarker(id, cornerPos, index + 1, inverseZoom);
+        this.createCornerMarker(id, cornerPos, index + 1, inverseZoom, stroke);
     }
 
     protected updateObject(id: string, group: Group, data: RegionData, index: number, inverseZoom: number): void {
@@ -168,12 +169,14 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
         // positionOnly 模式下只在尺寸或 zoom 变化时重建，否则总是重建
         const needRebuild = positionOnly ? (sizeChanged || zoomChanged) : (sizeChanged || zoomChanged || !cached);
 
+        const { fill } = this.style;
+        const stroke = data.theme ?? this.style.stroke;
+
         if (needRebuild) {
             // 完整重建
             this.canvas.remove(group);
             this.objects.delete(id);
 
-            const { fill, stroke } = this.style;
             const blocks = this.createBorderBlocks(pos.width, pos.height, stroke, inverseZoom);
 
             const bgRect = new Rect({
@@ -191,7 +194,7 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
                 excludeFromExport: true, hoverCursor: "move",
             });
 
-            this.metadata.set(newGroup, { category: Category.Region, id });
+            this.metadata.set(newGroup, { category: Category.Region, id, theme: data.theme });
             this.addObject(id, newGroup);
 
             // 更新缓存
@@ -215,6 +218,8 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
             marker.set({ ...cornerPos, scaleX: inverseZoom, scaleY: inverseZoom });
             marker.setCoords();
             this.setMarkerLabel(marker, index + 1);
+            // 更新角标记点颜色
+            this.updateMarkerColor(marker, stroke);
         }
     }
 
@@ -268,9 +273,12 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
 
     // ─── 预览框相关 ─────────────────────────────────────────
 
+    /** 预览框使用的主题颜色 */
+    private previewTheme: string | undefined = undefined;
+
     /** 创建预览框 */
-    createPreview(scenePt: { x: number; y: number }): void {
-        const { fill, stroke } = this.style;
+    createPreview(scenePt: { x: number; y: number }, theme?: string): void {
+        this.previewTheme = theme;
         this.previewGroup = new Group([], {
             left: scenePt.x, top: scenePt.y,
             originX: "left", originY: "top",
@@ -291,7 +299,8 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
         // 移除旧的预览，重新创建
         this.canvas.remove(this.previewGroup);
 
-        const { fill, stroke } = this.style;
+        const { fill } = this.style;
+        const stroke = this.previewTheme ?? this.style.stroke;
         const inverseZoom = 1 / this.canvas.getZoom();
 
         const blocks = this.createBorderBlocks(width, height, stroke, inverseZoom);
@@ -316,6 +325,7 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
             this.canvas.remove(this.previewGroup);
             this.previewGroup = null;
         }
+        this.previewTheme = undefined;
     }
 
     // ─── Private ─────────────────────────────────────────
@@ -403,8 +413,9 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
         return [path];
     }
 
-    private createCornerMarker(id: string, pos: { left: number; top: number }, label: number, scale: number): void {
-        const { radius, fill, stroke, strokeWidth, textColor, fontSize } = this.pointStyle;
+    private createCornerMarker(id: string, pos: { left: number; top: number }, label: number, scale: number, color?: string): void {
+        const { radius, stroke, strokeWidth, textColor, fontSize } = this.pointStyle;
+        const fill = color ?? this.pointStyle.fill;
 
         const circle = new Circle({
             radius, fill, stroke, strokeWidth,
@@ -426,6 +437,13 @@ export class RegionRenderer extends BaseRenderer<RegionData, RegionStyle, Group>
         this.metadata.set(group, { category: Category.Region, id: `${id}-corner` });
         this.canvas.add(group);
         this.cornerMarkers.set(id, group);
+    }
+
+    private updateMarkerColor(group: Group, color: string): void {
+        const circle = group.item(0) as Circle;
+        if (circle) {
+            circle.set("fill", color);
+        }
     }
 
     private getCornerPosition(rect: { left: number; top: number; width: number; height: number; angle: number }): { left: number; top: number } {

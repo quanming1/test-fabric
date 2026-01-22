@@ -47,7 +47,7 @@ export class PointManager {
     }
 
     /** 添加标记点 */
-    add(target: FabricObject, targetId: string, scenePt: { x: number; y: number }): MarkPoint | null {
+    add(target: FabricObject, targetId: string, scenePt: { x: number; y: number }, theme?: string): MarkPoint | null {
         const w = target.width ?? 0;
         const h = target.height ?? 0;
         if (!w || !h) return null;
@@ -58,7 +58,7 @@ export class PointManager {
         const nx = (localPt.x + w / 2) / w;
         const ny = (localPt.y + h / 2) / h;
 
-        const point: PointData = { id: genId("pt"), targetId, nx, ny };
+        const point: PointData = { id: genId("pt"), targetId, nx, ny, theme };
 
         this.points.push(point);
         this.historyHandler.recordAddPoint(point);
