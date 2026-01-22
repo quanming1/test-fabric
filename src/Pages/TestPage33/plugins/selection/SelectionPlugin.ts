@@ -5,6 +5,7 @@ import type { ToolbarPosition } from "../../core/types";
 import type { DrawPlugin } from "../draw/DrawPlugin";
 import type { ImagePlugin } from "../object/image/ImagePlugin";
 import type { MarkerPlugin } from "../object/marker/MarkerPlugin";
+import { FloatingToolbar } from "./FloatingToolbar";
 
 /** 选择插件配置 */
 interface SelectionConfig {
@@ -62,6 +63,9 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.on("object:modified", this.onObjectTransformEnd);
     // 监听缩放变化
     this.eventBus.on("zoom:change", this.updateToolbar);
+
+    // 注册浮动工具栏 DOM 图层
+    this.editor.domLayer.register("floating-toolbar", FloatingToolbar);
   }
 
   private onSelectionCreated = (): void => {
@@ -254,5 +258,6 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.off("object:rotating", this.onObjectTransforming);
     this.canvas.off("object:modified", this.onObjectTransformEnd);
     this.eventBus.off("zoom:change", this.updateToolbar);
+    this.editor.domLayer.unregister("floating-toolbar");
   }
 }

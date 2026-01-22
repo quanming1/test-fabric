@@ -5,22 +5,19 @@ import {
   VerticalAlignTopOutlined,
   VerticalAlignBottomOutlined,
 } from "@ant-design/icons";
-import type { ToolbarPosition } from "../core/types";
-import { useEditorEvent } from "../hooks";
-import { SelectionPlugin } from "../plugins";
-import styles from "../index.module.scss";
-import { CanvasEditor } from "../core";
-
-interface FloatingToolbarProps {
-  editor: CanvasEditor | null;
-}
+import type { ToolbarPosition, DOMLayerProps } from "../../core";
+import { useEditorEvent } from "../../hooks";
+import type { SelectionPlugin } from "./SelectionPlugin";
+import styles from "../../index.module.scss";
 
 const initialPos: ToolbarPosition = { x: 0, y: 0, visible: false };
 
-export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ editor }) => {
-  // 订阅工具栏位置事件
+/**
+ * 浮动工具栏组件
+ * 跟随选中对象显示
+ */
+export const FloatingToolbar: React.FC<DOMLayerProps> = ({ editor }) => {
   const pos = useEditorEvent(editor, "toolbar:update", initialPos);
-
   const selectionPlugin = editor?.getPlugin<SelectionPlugin>("selection");
 
   const handleClone = async () => {

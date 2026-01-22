@@ -4,6 +4,7 @@ import type { Plugin } from "../../plugins";
 import { ObjectMetadata } from "../object/ObjectMetadata";
 import { HotkeyManager } from "../hotkey/HotkeyManager";
 import { HistoryManager, type HistoryOptions } from "../history";
+import { DOMLayerManager } from "../dom";
 
 /**
  * 核心编辑器类
@@ -15,6 +16,7 @@ export class CanvasEditor {
   metadata: ObjectMetadata;
   hotkey: HotkeyManager;
   history: HistoryManager;
+  domLayer: DOMLayerManager;
   private plugins = new Map<string, Plugin>();
   private _destroyed = false;
 
@@ -35,6 +37,7 @@ export class CanvasEditor {
       // 最大存储历史记录数量为：50个
       maxRecords: 50,
     });
+    this.domLayer = new DOMLayerManager();
   }
 
   /** 注册插件（链式调用） */
@@ -88,6 +91,7 @@ export class CanvasEditor {
     this.eventBus.clear();
     this.hotkey.destroy();
     this.history.destroy();
+    this.domLayer.destroy();
     this.canvas.dispose();
   }
 

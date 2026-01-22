@@ -11,57 +11,36 @@ import {
   UploadOutlined,
   ExportOutlined,
 } from "@ant-design/icons";
-import type { ModePlugin } from "../plugins/mode/ModePlugin";
-import type { MarkerPlugin } from "../plugins/object/marker/MarkerPlugin";
-import type { ImagePlugin } from "../plugins/object/image/ImagePlugin";
-import type { ImportExportPlugin } from "../plugins/io/ImportExportPlugin";
-import { EditorMode } from "../plugins/mode/ModePlugin";
-import { useEditorEvent } from "../hooks";
-import styles from "../index.module.scss";
-import { CanvasEditor } from "../core";
-import { openFilePicker } from "../utils";
+import type { ModePlugin } from "../mode/ModePlugin";
+import type { MarkerPlugin } from "../object/marker/MarkerPlugin";
+import type { ImagePlugin } from "../object/image/ImagePlugin";
+import type { ImportExportPlugin } from "../io/ImportExportPlugin";
+import { EditorMode } from "../mode/ModePlugin";
+import { useEditorEvent } from "../../hooks";
+import styles from "../../index.module.scss";
+import type { DOMLayerProps } from "../../core";
+import { openFilePicker } from "../../utils";
 
-/**
- * 工具项配置接口
- */
 interface ToolItem {
-  /** 唯一标识，同时作为模式值（如果是模式切换按钮） */
   key: string;
-  /** 图标 */
   icon: React.ReactNode;
-  /** 提示文字 */
   tooltip: string;
-  /** 点击回调（非模式切换按钮使用） */
   onClick?: () => void;
-  /** 是否为危险操作（红色样式） */
   danger?: boolean;
-  /** 关联的模式（模式切换按钮使用） */
   mode?: EditorMode;
-}
-
-interface ToolbarProps {
-  editor: CanvasEditor | null;
 }
 
 /**
  * 画布工具栏组件
- * 左侧工具按钮组：
- * - 模式切换（选择/拖拽）
- * - 绘制工具（矩形）
- * - 清空画布
- *
- * 采用配置化方式，通过 toolGroups 数组定义工具按钮
  */
-export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
+export const Toolbar: React.FC<DOMLayerProps> = ({ editor }) => {
   const modePlugin = editor?.getPlugin<ModePlugin>("mode");
   const [showModePopup, setShowModePopup] = useState(false);
   const modeButtonRef = useRef<HTMLDivElement>(null);
 
-  // 订阅模式变化事件
   const modeData = useEditorEvent(editor, "mode:change", { mode: EditorMode.Select });
   const currentMode = modeData?.mode ?? EditorMode.Select;
 
-  // 点击外部关闭弹窗
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (modeButtonRef.current && !modeButtonRef.current.contains(e.target as Node)) {
@@ -72,14 +51,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // ============ 模式切换 ============
-  /** 切换到指定模式 */
   const handleModeChange = (mode: EditorMode) => {
     modePlugin?.setMode(mode);
     setShowModePopup(false);
   };
 
-  /** 模式选项配置 */
   const modeOptions = [
     { mode: EditorMode.Select, icon: <SelectOutlined />, label: "选择模式" },
     { mode: EditorMode.Pan, icon: <DragOutlined />, label: "拖拽模式" },
@@ -87,14 +63,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     { mode: EditorMode.RangeSelect, icon: <GatewayOutlined />, label: "区域选择" },
   ];
 
-  /** 获取当前模式的图标 */
   const getCurrentModeIcon = () => {
     const option = modeOptions.find((opt) => opt.mode === currentMode);
     return option?.icon ?? <SelectOutlined />;
   };
 
-  // ============ 其他操作 ============
-  /** 清空画布所有对象 */
   const handleClearAll = () => {
     if (!editor) return;
     editor.canvas.getObjects().forEach((obj) => editor.canvas.remove(obj));
@@ -102,7 +75,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     editor.getPlugin<MarkerPlugin>("marker")?.clearMarkers();
   };
 
-  /** 上传图片 */
   const handleUploadImage = async () => {
     const file = await openFilePicker({ accept: "image/*" });
     if (file) {
@@ -110,22 +82,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     }
   };
 
-  /** 导出为 JSON */
   const handleExport = () => {
     editor?.getPlugin<ImportExportPlugin>("io")?.export({ download: "canvas.json" });
   };
 
-  /** 导入 JSON */
   const handleImport = () => {
     editor?.getPlugin<ImportExportPlugin>("io")?.import();
   };
 
-  /** 导出选中图片及标记 */
   const handleExportImage = async () => {
     const imagePlugin = editor?.getPlugin<ImagePlugin>("image");
     if (!imagePlugin) return;
 
-    // 获取当前选中的图片
     const activeObj = editor?.canvas.getActiveObject();
     const imageId = activeObj ? editor?.metadata.getField(activeObj, "id") : null;
     if (!imageId) {
@@ -142,14 +110,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     }
   };
 
-  // ============ 工具栏配置 ============
-  /**
-   * 工具按钮分组配置
-   * 每个子数组为一组，组之间会显示分隔线
-   */
   const toolGroups: ToolItem[][] = useMemo(
     () => [
-      // 第一组：上传图片
       [
         {
           key: "upload-image",
@@ -158,7 +120,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
           onClick: handleUploadImage,
         },
       ],
-      // 第二组：导入导出
       [
         {
           key: "export",
@@ -179,7 +140,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
           onClick: handleExportImage,
         },
       ],
-      // 第三组：危险操作
       [
         {
           key: "clear",
@@ -193,9 +153,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     [editor],
   );
 
-  /**
-   * 处理按钮点击
-   */
   const handleClick = (item: ToolItem) => {
     if (item.mode !== undefined) {
       handleModeChange(item.mode);
@@ -204,17 +161,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     }
   };
 
-  /**
-   * 判断按钮是否激活
-   */
   const isActive = (item: ToolItem): boolean => {
     return item.mode !== undefined && item.mode === currentMode;
   };
 
   return (
-    // 左侧工具栏 - 绝对定位到画布左侧垂直居中
     <div className={styles.toolbarLeft}>
-      {/* 模式切换按钮（带弹窗） */}
       <div ref={modeButtonRef} className={styles.modeButtonWrapper}>
         <button
           className={`${styles.toolBtn} ${styles.active}`}
@@ -242,7 +194,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
 
       {toolGroups.map((group, groupIndex) => (
         <React.Fragment key={groupIndex}>
-          {/* 组之间添加分隔线 */}
           {groupIndex > 0 && <div className={styles.toolDivider} />}
           {group.map((item) => (
             <Tooltip key={item.key} title={item.tooltip} placement="right">

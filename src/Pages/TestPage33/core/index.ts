@@ -30,6 +30,11 @@ export type {
     SyncManagerOptions,
 } from "./sync";
 
+// DOM Layer
+export { DOMLayerManager } from "./dom";
+export { DOMLayerRenderer } from "./dom/DOMLayerRenderer";
+export type { DOMLayer, DOMLayerConfig, DOMLayerProps, DOMLayerEvents } from "./dom";
+
 // Utils
 export { CoordinateHelper, type ScreenPoint } from "./utils/coordinateUtils";
 export { genId } from "./utils/genId";

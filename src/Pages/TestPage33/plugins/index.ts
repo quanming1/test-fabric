@@ -31,3 +31,6 @@ export type { GuidelinesPluginOptions, GuidelinesStyle, Guideline } from "./guid
 // Controls
 export { ControlsPlugin } from "./controls";
 export type { ControlsStyle, ControlsPluginOptions } from "./controls";
+
+// Toolbar
+export { ToolbarPlugin } from "./toolbar";
