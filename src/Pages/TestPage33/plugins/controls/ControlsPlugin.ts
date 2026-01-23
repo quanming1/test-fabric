@@ -1,4 +1,4 @@
-import { controlsUtils, type FabricObject, type Transform, type TPointerEvent } from "fabric";
+import { controlsUtils, type FabricObject, type Transform, type TPointerEvent, ActiveSelection } from "fabric";
 import { BasePlugin } from "../base/Plugin";
 import { Category } from "../../core";
 
@@ -89,11 +89,36 @@ export class ControlsPlugin extends BasePlugin {
     }
 
     protected onInstall(): void {
+        // 修改 ActiveSelection 原型的 controls 光标样式
+        this.patchActiveSelectionControls();
+
         // 监听对象添加事件，为新对象应用控制手柄配置
         this.canvas.on("object:added", this.onObjectAdded);
+        // 监听选择事件，为 ActiveSelection 应用控制手柄配置
+        this.canvas.on("selection:created", this.onSelectionChange);
+        this.canvas.on("selection:updated", this.onSelectionChange);
 
         // 为已存在的对象应用配置
         this.applyToAllObjects();
+    }
+
+    /**
+     * 修补 ActiveSelection 原型的控制手柄光标样式
+     * 
+     * 原因：Fabric.js 的 ActiveSelection（多选）使用原型链共享 controls 对象，
+     * 默认的角落光标是水平/垂直方向的 resize，需要改为斜向 resize 以匹配实际缩放方向。
+     * 直接修改原型可确保所有多选实例都使用正确的光标样式。
+     */
+    private patchActiveSelectionControls(): void {
+        const proto = ActiveSelection.prototype;
+        if (proto.controls) {
+            // tl(左上) 和 br(右下) 使用 ↘↖ 方向光标
+            proto.controls.tl.cursorStyle = "nwse-resize";
+            proto.controls.br.cursorStyle = "nwse-resize";
+            // tr(右上) 和 bl(左下) 使用 ↙↗ 方向光标
+            proto.controls.tr.cursorStyle = "nesw-resize";
+            proto.controls.bl.cursorStyle = "nesw-resize";
+        }
     }
 
     /**
@@ -107,16 +132,19 @@ export class ControlsPlugin extends BasePlugin {
     };
 
     /**
-     * 为单个对象应用控制手柄配置
+     * 选择变化时为 ActiveSelection 应用控制手柄配置
      */
-    private applyControlsToObject(obj: FabricObject): void {
-        // 只为允许的分类应用配置
-        const isAllowed = this.allowedCategories.some(
-            (cat) => this.editor.metadata.is(obj, "category", cat)
-        );
-        if (!isAllowed) return;
+    private onSelectionChange = (): void => {
+        const activeObject = this.canvas.getActiveObject();
+        if (activeObject instanceof ActiveSelection) {
+            this.applyControlsStyle(activeObject);
+        }
+    };
 
-        // 应用样式
+    /**
+     * 为对象应用控制手柄样式和行为（公共方法）
+     */
+    private applyControlsStyle(obj: FabricObject): void {
         obj.set({
             cornerColor: this.style.cornerColor,
             cornerStrokeColor: this.style.cornerStrokeColor,
@@ -126,30 +154,37 @@ export class ControlsPlugin extends BasePlugin {
             borderColor: this.style.borderColor,
             borderScaleFactor: this.style.borderScaleFactor,
             borderDashArray: this.style.borderDashArray,
-            // 禁止缩放时翻转图片（拖过对边时不镜像）
             lockScalingFlip: true,
         });
 
-        // 只显示四个角的手柄，隐藏其他
         obj.setControlsVisibility({
-            tl: true,
-            tr: true,
-            bl: true,
-            br: true,
-            mt: false,
-            mb: false,
-            ml: false,
-            mr: false,
-            mtr: false,
+            tl: true, tr: true, bl: true, br: true,
+            mt: false, mb: false, ml: false, mr: false, mtr: false,
         });
 
-        // 强制等比缩放：修改四个角的 actionHandler
+        // 设置四个角的光标样式为斜向 resize（与缩放方向一致）
+        // tl(左上) 和 br(右下) 使用 ↘↖ 方向，tr(右上) 和 bl(左下) 使用 ↙↗ 方向
+        obj.controls.tl.cursorStyle = "nwse-resize";
+        obj.controls.br.cursorStyle = "nwse-resize";
+        obj.controls.tr.cursorStyle = "nesw-resize";
+        obj.controls.bl.cursorStyle = "nesw-resize";
+
         if (this.lockAspectRatio) {
             obj.controls.tl.actionHandler = scalingEquallyForced;
             obj.controls.tr.actionHandler = scalingEquallyForced;
             obj.controls.bl.actionHandler = scalingEquallyForced;
             obj.controls.br.actionHandler = scalingEquallyForced;
         }
+    }
+
+    /**
+     * 为单个对象应用控制手柄配置（检查分类）
+     */
+    private applyControlsToObject(obj: FabricObject): void {
+        const isAllowed = this.allowedCategories.some(
+            (cat) => this.editor.metadata.is(obj, "category", cat)
+        );
+        if (isAllowed) this.applyControlsStyle(obj);
     }
 
     /**
@@ -213,5 +248,7 @@ export class ControlsPlugin extends BasePlugin {
 
     protected onDestroy(): void {
         this.canvas.off("object:added", this.onObjectAdded);
+        this.canvas.off("selection:created", this.onSelectionChange);
+        this.canvas.off("selection:updated", this.onSelectionChange);
     }
 }
