@@ -65,20 +65,58 @@ export class ZoomPlugin extends BasePlugin {
     });
   }
 
+  /** 触摸板滑动判定阈值：deltaY 小于此值视为触摸板滑动 */
+  private static readonly TRACKPAD_THRESHOLD = 50;
+  /** 普通鼠标滚轮缩放系数 */
+  private static readonly MOUSE_ZOOM_FACTOR = 0.999;
+  /** 触摸板捏合缩放系数 */
+  private static readonly TRACKPAD_ZOOM_FACTOR = 0.99;
+
   private onWheel = (opt: TPointerEventInfo<WheelEvent>): void => {
     const e = opt.e;
     e.preventDefault();
     e.stopPropagation();
 
+    const isSmallDelta = Math.abs(e.deltaY) < ZoomPlugin.TRACKPAD_THRESHOLD;
+
+    // Mac 触摸板双指捏合：ctrlKey + 小 deltaY
+    if (e.ctrlKey && isSmallDelta) {
+      this.handleZoom(e, ZoomPlugin.TRACKPAD_ZOOM_FACTOR);
+      return;
+    }
+
+    // 触摸板双指滑动：deltaX 非零，或 deltaY 较小（无 ctrlKey）
+    const isTrackpadPan = !e.ctrlKey && (e.deltaX !== 0 || isSmallDelta);
+    if (isTrackpadPan) {
+      this.handlePan(e.deltaX, e.deltaY);
+      return;
+    }
+
+    // 普通鼠标滚轮缩放（包括 Ctrl + 滚轮）
+    this.handleZoom(e, ZoomPlugin.MOUSE_ZOOM_FACTOR);
+  };
+
+  /** 处理缩放 */
+  private handleZoom(e: WheelEvent, factor: number): void {
     const point = { x: e.offsetX, y: e.offsetY };
-    let newZoom = this.canvas.getZoom() * 0.999 ** e.deltaY;
+    let newZoom = this.canvas.getZoom() * factor ** e.deltaY;
     newZoom = Math.max(this.minZoom, Math.min(this.maxZoom, newZoom));
 
     this.canvas.zoomToPoint(point as any, newZoom);
     this._zoom = newZoom;
-
     this.eventBus.emit("zoom:change", newZoom);
-  };
+  }
+
+  /** 处理平移 */
+  private handlePan(deltaX: number, deltaY: number): void {
+    const vpt = this.canvas.viewportTransform;
+    if (!vpt) return;
+
+    vpt[4] -= deltaX;
+    vpt[5] -= deltaY;
+    this.canvas.setViewportTransform(vpt);
+    this.canvas.requestRenderAll();
+  }
 
   /** 重置缩放到 100% */
   reset(): void {
