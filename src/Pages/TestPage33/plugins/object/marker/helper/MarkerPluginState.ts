@@ -41,13 +41,13 @@ export class MarkerPluginState extends EventBus<MarkerPluginStateEvents> {
     private bindEvents(): void {
         this.canvas.on("mouse:move", this.handleMouseMove);
         this.canvas.on("mouse:out", this.handleMouseOut);
-        // 使用 HotkeyManager 的 watch API 监听 Ctrl/Meta 键
+        // 使用 HotkeyManager 的 watch API 监听 Mod 键（Mac: Command, Windows: Ctrl）
         this.unwatchHotkey = this.hotkey.watch(
             () => {
                 this.updateCanMark();
             },
             {
-                codes: ["ControlLeft", "ControlRight", "MetaLeft", "MetaRight"],
+                codes: "Mod",
                 mode: "any",
                 repeat: false,
             }
@@ -62,12 +62,9 @@ export class MarkerPluginState extends EventBus<MarkerPluginStateEvents> {
     }
 
     private updateCanMark(): void {
-        const isCtrlOrMeta = this.hotkey.isPressed(
-            ["ControlLeft", "ControlRight", "MetaLeft", "MetaRight"],
-            "any"
-        );
+        const isModPressed = this.hotkey.isPressed("Mod", "any");
         const oldRangeAble = this.rangeAble;
-        this.rangeAble = isCtrlOrMeta && this.hoveredTargetId !== null;
+        this.rangeAble = isModPressed && this.hoveredTargetId !== null;
 
         if (oldRangeAble !== this.rangeAble) {
             this.emit("rangeAble:change", this.rangeAble);

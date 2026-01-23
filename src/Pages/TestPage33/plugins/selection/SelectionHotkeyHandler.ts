@@ -4,17 +4,14 @@ import type { ModePlugin } from "../mode/ModePlugin";
 import type { ZoomPlugin } from "../viewport/ZoomPlugin";
 import { EditorMode } from "../mode/ModePlugin";
 
-/** Ctrl/Meta 修饰键列表 */
-const CTRL_META_KEYS = ["ControlLeft", "ControlRight", "MetaLeft", "MetaRight"] as const;
-
 /**
  * 选择插件热键处理器
  * 
  * 职责：处理与选择相关的快捷键操作
  * - Delete / Backspace: 删除选中元素
  * - Space: 临时进入 Pan 模式（松开恢复）
- * - Ctrl + / Ctrl -: 缩放画布
- * - Ctrl + A: 全选并适配视图
+ * - Mod + / Mod -: 缩放画布
+ * - Mod + A: 全选并适配视图
  */
 export class SelectionHotkeyHandler {
     private unsubscribes: Array<() => void> = [];
@@ -41,9 +38,9 @@ export class SelectionHotkeyHandler {
         this.modeBeforeSpace = null;
     }
 
-    /** 检查是否按下 Ctrl 或 Meta 键 */
-    private isCtrlOrMeta(): boolean {
-        return this.hotkey.isPressed([...CTRL_META_KEYS], "any");
+    /** 检查是否按下 Mod 键（Mac: Command, Windows: Ctrl） */
+    private isModPressed(): boolean {
+        return this.hotkey.isPressed("Mod", "any");
     }
 
     /** 获取 ZoomPlugin */
@@ -104,15 +101,15 @@ export class SelectionHotkeyHandler {
 
     /**
      * 绑定缩放快捷键
-     * - Ctrl/Cmd + Equal(+): 放大 10%
-     * - Ctrl/Cmd + Minus(-): 缩小 10%
+     * - Mod + Equal(+): 放大 10%
+     * - Mod + Minus(-): 缩小 10%
      */
     private bindZoom(): void {
         const zoomStep = 0.1;
 
         const unsubZoomIn = this.hotkey.watch(
             ({ event, matched }) => {
-                if (matched && event.type === "keydown" && this.isCtrlOrMeta()) {
+                if (matched && event.type === "keydown" && this.isModPressed()) {
                     event.preventDefault();
                     const zoom = this.zoomPlugin;
                     zoom?.setZoom(zoom.zoom + zoomStep);
@@ -123,7 +120,7 @@ export class SelectionHotkeyHandler {
 
         const unsubZoomOut = this.hotkey.watch(
             ({ event, matched }) => {
-                if (matched && event.type === "keydown" && this.isCtrlOrMeta()) {
+                if (matched && event.type === "keydown" && this.isModPressed()) {
                     event.preventDefault();
                     const zoom = this.zoomPlugin;
                     zoom?.setZoom(zoom.zoom - zoomStep);
@@ -136,14 +133,14 @@ export class SelectionHotkeyHandler {
     }
 
     /**
-     * 绑定全选快捷键（Ctrl/Cmd + A）
+     * 绑定全选快捷键（Mod + A）
      * - 选中画布上所有可选元素
      * - 适配视图到全部元素
      */
     private bindSelectAll(): void {
         const unsub = this.hotkey.watch(
             ({ event, matched }) => {
-                if (matched && event.type === "keydown" && this.isCtrlOrMeta()) {
+                if (matched && event.type === "keydown" && this.isModPressed()) {
                     event.preventDefault();
                     this.plugin.selectAll();
                     this.zoomPlugin?.fitToView({ animation: { enabled: true, duration: 200 } });

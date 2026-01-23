@@ -61,11 +61,12 @@ export class HistoryManager {
 
   /**
    * 绑定撤销/重做快捷键
+   * 使用 Mod 虚拟键自动适配 Mac(Command) / Windows(Ctrl)
    */
   private bindHotkeys(): void {
     const hotkey = this.editor.hotkey;
 
-    // Ctrl+Z 撤销
+    // Mod+Z 撤销
     const unsubUndo = hotkey.watch(
       ({ event, matched }) => {
         if (matched && event.type === "keydown") {
@@ -73,10 +74,10 @@ export class HistoryManager {
           this.performUndo();
         }
       },
-      { codes: ["ControlLeft", "KeyZ"], mode: "only" },
+      { codes: ["ModLeft", "KeyZ"], mode: "only" },
     );
 
-    // Ctrl+Y 重做
+    // Mod+Y 重做 (Windows 习惯)
     const unsubRedoY = hotkey.watch(
       ({ event, matched }) => {
         if (matched && event.type === "keydown") {
@@ -84,10 +85,10 @@ export class HistoryManager {
           this.performRedo();
         }
       },
-      { codes: ["ControlLeft", "KeyY"], mode: "only" },
+      { codes: ["ModLeft", "KeyY"], mode: "only" },
     );
 
-    // Ctrl+Shift+Z 重做
+    // Mod+Shift+Z 重做 (Mac 习惯，Windows 也支持)
     const unsubRedoShiftZ = hotkey.watch(
       ({ event, matched }) => {
         if (matched && event.type === "keydown") {
@@ -95,7 +96,7 @@ export class HistoryManager {
           this.performRedo();
         }
       },
-      { codes: ["ControlLeft", "ShiftLeft", "KeyZ"], mode: "only" },
+      { codes: ["ModLeft", "ShiftLeft", "KeyZ"], mode: "only" },
     );
 
     this.unsubscribeHotkeys.push(unsubUndo, unsubRedoY, unsubRedoShiftZ);
