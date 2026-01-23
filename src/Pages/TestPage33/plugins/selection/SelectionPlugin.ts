@@ -89,9 +89,9 @@ export class SelectionPlugin extends BasePlugin {
     this.eventBus.emit("toolbar:update", { x: 0, y: 0, visible: false });
   };
 
-  /** 变换过程中（移动/缩放/旋转）更新工具栏 */
+  /** 变换过程中（移动/缩放/旋转）隐藏工具栏 */
   private onObjectTransforming = (): void => {
-    this.updateToolbar();
+    this.eventBus.emit("toolbar:update", { x: 0, y: 0, visible: false });
   };
 
   /** 变换结束（modified）后更新工具栏 */
