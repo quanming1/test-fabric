@@ -200,8 +200,8 @@ export const ZoomBar: React.FC<DOMLayerProps> = ({ editor }) => {
   const handleZoomIn = () => zoomPlugin?.setZoom(zoom + 0.1);
   const handleZoomOut = () => zoomPlugin?.setZoom(zoom - 0.1);
 
-  const minZoom = 0.1;
-  const maxZoom = 20;
+  const minZoom = 0.25;
+  const maxZoom = 4;
 
   return (
     <div style={containerStyle}>

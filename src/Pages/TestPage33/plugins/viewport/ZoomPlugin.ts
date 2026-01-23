@@ -41,8 +41,8 @@ export class ZoomPlugin extends BasePlugin {
   readonly name = "zoom";
 
   private _zoom = 1;
-  private minZoom = 0.1;
-  private maxZoom = 20;
+  private minZoom = 0.25;
+  private maxZoom = 4;
   private fitViewOptions: Required<FitViewOptions> = DEFAULT_FIT_VIEW_OPTIONS;
 
   get zoom(): number {
