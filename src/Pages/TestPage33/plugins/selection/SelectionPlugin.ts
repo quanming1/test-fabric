@@ -1,11 +1,12 @@
 import { type FabricObject, ActiveSelection } from "fabric";
 import { BasePlugin } from "../base/Plugin";
-import { Category, CoordinateHelper } from "../../core";
+import { Category } from "../../core";
 import type { ToolbarPosition } from "../../core/types";
 import type { DrawPlugin } from "../draw/DrawPlugin";
 import type { ImagePlugin } from "../object/image/ImagePlugin";
 import type { MarkerPlugin } from "../object/marker/MarkerPlugin";
 import { FloatingToolbar } from "./FloatingToolbar";
+import { SelectionHotkeyHandler } from "./SelectionHotkeyHandler";
 
 /** 选择插件配置 */
 interface SelectionConfig {
@@ -27,6 +28,11 @@ export class SelectionPlugin extends BasePlugin {
 
   private activeObject: FabricObject | null = null;
   private config: SelectionConfig;
+  private hotkeyHandler: SelectionHotkeyHandler | null = null;
+  /** 工具栏宽度（由 FloatingToolbar 组件测量后设置） */
+  private toolbarWidth = 72;
+  /** 标签区域预留宽度 */
+  private static readonly LABEL_RESERVED_WIDTH = 120;
 
   /** 当前选中对象（单选或 ActiveSelection） */
   get selected(): FabricObject | null {
@@ -47,6 +53,11 @@ export class SelectionPlugin extends BasePlugin {
     return this.activeObject instanceof ActiveSelection;
   }
 
+  /** 获取编辑器实例（供 handler 访问） */
+  getEditor() {
+    return this.editor;
+  }
+
   constructor(config?: Partial<SelectionConfig>) {
     super();
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -56,15 +67,15 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.on("selection:created", this.onSelectionCreated);
     this.canvas.on("selection:updated", this.onSelectionUpdated);
     this.canvas.on("selection:cleared", this.onSelectionCleared);
-    // 变换过程中更新工具栏位置
     this.canvas.on("object:moving", this.onObjectTransforming);
     this.canvas.on("object:scaling", this.onObjectTransforming);
     this.canvas.on("object:rotating", this.onObjectTransforming);
     this.canvas.on("object:modified", this.onObjectTransformEnd);
-    // 监听缩放变化
     this.eventBus.on("zoom:change", this.updateToolbar);
 
-    // 注册浮动工具栏 DOM 图层
+    this.hotkeyHandler = new SelectionHotkeyHandler(this, this.editor.hotkey);
+    this.hotkeyHandler.bind();
+
     this.editor.domLayer.register("floating-toolbar", FloatingToolbar, {
       zIndex: 200,
       visible: true,
@@ -89,22 +100,14 @@ export class SelectionPlugin extends BasePlugin {
     this.eventBus.emit("toolbar:update", { x: 0, y: 0, visible: false });
   };
 
-  /** 变换过程中（移动/缩放/旋转）隐藏工具栏 */
   private onObjectTransforming = (): void => {
     this.eventBus.emit("toolbar:update", { x: 0, y: 0, visible: false });
   };
 
-  /** 变换结束（modified）后更新工具栏 */
   private onObjectTransformEnd = (): void => {
     this.updateToolbar();
   };
 
-  /** 工具栏宽度（由 FloatingToolbar 组件测量后设置） */
-  private toolbarWidth = 72;
-  /** 标签区域预留宽度（文件名 + 尺寸信息的最小显示宽度） */
-  private static readonly LABEL_RESERVED_WIDTH = 120;
-
-  /** 设置工具栏宽度（由 FloatingToolbar 组件调用） */
   setToolbarWidth(width: number): void {
     this.toolbarWidth = width;
   }
@@ -118,62 +121,56 @@ export class SelectionPlugin extends BasePlugin {
     const vpt = this.canvas.viewportTransform;
     if (!vpt) return;
 
-    const coordHelper = new CoordinateHelper(vpt);
+    // getBoundingRect() 返回的已经是屏幕坐标，无需再转换
     const boundingRect = this.activeObject.getBoundingRect();
-    const topLeft = coordHelper.sceneToScreen({ x: boundingRect.left, y: boundingRect.top });
-    const screenWidth = boundingRect.width * vpt[0];
+    const screenWidth = boundingRect.width;
 
-    // 默认居中位置
-    let x = topLeft.x + screenWidth / 2;
-    const y = topLeft.y - this.config.toolbarOffsetY;
+    let x = boundingRect.left + screenWidth / 2;
+    const y = boundingRect.top - this.config.toolbarOffsetY;
 
-    // 判断是否需要右对齐（避免遮挡图片标签）
-    // 条件：单选图片时，工具栏居中会遮挡左侧标签区域
     if (this.shouldAlignRight(screenWidth)) {
-      // 工具栏左边缘对齐图片右边缘：x = 图片右边界 + 工具栏半宽（因为 transform: translate(-50%)）
-      x = topLeft.x + screenWidth + this.toolbarWidth / 2;
+      x = boundingRect.left + screenWidth + this.toolbarWidth / 2;
     }
 
     const pos: ToolbarPosition = { x, y, visible: true };
     this.eventBus.emit("toolbar:update", pos);
   };
 
-  /**
-   * 判断工具栏是否应该右对齐
-   * 当单选图片且工具栏居中会遮挡标签时返回 true
-   */
   private shouldAlignRight(screenWidth: number): boolean {
-    // 只有单选时才考虑（多选没有标签）
     if (this.isMultiSelection) return false;
-
-    // 检查是否是图片类型
     const meta = this.editor.metadata.get(this.activeObject!);
     if (meta?.category !== Category.Image) return false;
-
-    // 计算工具栏居中时的左边界距离图片左边界的距离
     const toolbarHalfWidth = this.toolbarWidth / 2;
     const toolbarLeftOffset = screenWidth / 2 - toolbarHalfWidth;
-
-    // 如果工具栏左边界侵入标签预留区域，则需要右对齐
     return toolbarLeftOffset < SelectionPlugin.LABEL_RESERVED_WIDTH;
   }
 
-  /** 将一组对象设置为当前选中（支持多选/单选）；传空数组则不做任何事 */
+  /** 将一组对象设置为当前选中 */
   private setSelection(objects: FabricObject[]): void {
     if (objects.length === 0) return;
-
-    // 清空旧选中，避免 ActiveSelection 混入旧对象
     this.canvas.discardActiveObject();
-
     if (objects.length === 1) {
       this.canvas.setActiveObject(objects[0]);
       objects[0].setCoords();
       return;
     }
-
     const selection = new ActiveSelection(objects, { canvas: this.canvas });
     selection.setCoords();
     this.canvas.setActiveObject(selection);
+  }
+
+  /** 可全选的对象分类 */
+  private static readonly SELECTABLE_CATEGORIES: Category[] = [Category.Image];
+
+  /** 全选画布上所有可选元素（根据 category 判断） */
+  selectAll(): void {
+    const objects = this.canvas.getObjects().filter((obj) => {
+      const meta = this.editor.metadata.get(obj);
+      if (!meta?.category) return false;
+      return SelectionPlugin.SELECTABLE_CATEGORIES.includes(meta.category);
+    });
+    this.setSelection(objects);
+    this.canvas.requestRenderAll();
   }
 
   /** 复制当前选中对象（支持多选） */
@@ -181,8 +178,6 @@ export class SelectionPlugin extends BasePlugin {
     const active = this.canvas.getActiveObject();
     if (!active) return [];
 
-    // 关键点：ActiveSelection（多选）时，对象的 left/top 是“相对选区坐标”；
-    // 先取出对象列表，再解除 ActiveSelection，让坐标回到画布绝对坐标后再克隆。
     const isMulti = active instanceof ActiveSelection;
     const objects = isMulti ? active.getObjects() : [active];
     if (objects.length === 0) return [];
@@ -193,13 +188,11 @@ export class SelectionPlugin extends BasePlugin {
     }
 
     try {
-      // 关键：多选复制是一种“集体操作”，应该只占用历史栈中的 1 个元素
       const clones = await this.editor.history.runBatch(async () => {
         const cloneOptions = { offset: { x: 20, y: 20 }, recordHistory: true };
         const drawPlugin = this.editor.getPlugin<DrawPlugin>("draw");
         const imagePlugin = this.editor.getPlugin<ImagePlugin>("image");
 
-        // 遍历对象，根据 category 派发到对应插件
         const clonePromises: Promise<FabricObject[]>[] = [];
         for (const obj of objects) {
           const meta = this.editor.metadata.get(obj);
@@ -210,21 +203,14 @@ export class SelectionPlugin extends BasePlugin {
               clonePromises.push(drawPlugin?.clone([meta.id], cloneOptions) ?? Promise.resolve([]));
               break;
             case Category.Image:
-              clonePromises.push(
-                imagePlugin?.clone([meta.id], cloneOptions) ?? Promise.resolve([]),
-              );
+              clonePromises.push(imagePlugin?.clone([meta.id], cloneOptions) ?? Promise.resolve([]));
               break;
-            default:
-              console.warn("[cloneSelected] 未支持的 category:", meta.category);
           }
         }
-
         return (await Promise.all(clonePromises)).flat();
       });
 
-      // 克隆完成后自动选中克隆出来的对象
       this.setSelection(clones);
-
       this.canvas.requestRenderAll();
       requestAnimationFrame(() => this.updateToolbar());
       return clones;
@@ -234,49 +220,36 @@ export class SelectionPlugin extends BasePlugin {
     }
   }
 
-  /** 置顶（支持多选） */
   bringToFront(): void {
     const objects = this.selectedObjects;
     if (objects.length === 0) return;
-
-    objects.forEach((obj) => {
-      this.canvas.bringObjectToFront(obj);
-    });
+    objects.forEach((obj) => this.canvas.bringObjectToFront(obj));
     this.eventBus.emit("layer:change");
     this.canvas.requestRenderAll();
   }
 
-  /** 置底（支持多选） */
   sendToBack(): void {
     const objects = this.selectedObjects;
     if (objects.length === 0) return;
-
-    // 反向遍历保持相对顺序
-    [...objects].reverse().forEach((obj) => {
-      this.canvas.sendObjectToBack(obj);
-    });
+    [...objects].reverse().forEach((obj) => this.canvas.sendObjectToBack(obj));
     this.eventBus.emit("layer:change");
     this.canvas.requestRenderAll();
   }
 
-  /** 删除选中对象（支持多选） */
   async deleteSelected(): Promise<void> {
     const objects = this.selectedObjects;
     if (objects.length === 0) return;
 
-    // 获取所有选中对象的 ID
     const ids = objects
       .map((obj) => this.editor.metadata.get(obj)?.id)
       .filter((id): id is string => id !== undefined);
 
     this.canvas.discardActiveObject();
 
-    // 调用各插件的 remove 方法，由插件内部处理删除和历史记录
     const drawPlugin = this.editor.getPlugin<DrawPlugin>("draw");
     const imagePlugin = this.editor.getPlugin<ImagePlugin>("image");
     const markerPlugin = this.editor.getPlugin<MarkerPlugin>("marker");
 
-    // 关键：多选删除是一种“集体操作”，应该只占用历史栈中的 1 个元素
     await this.editor.history.runBatch(() => {
       drawPlugin?.remove(ids, true);
       imagePlugin?.remove(ids, true);
@@ -298,6 +271,7 @@ export class SelectionPlugin extends BasePlugin {
     this.canvas.off("object:rotating", this.onObjectTransforming);
     this.canvas.off("object:modified", this.onObjectTransformEnd);
     this.eventBus.off("zoom:change", this.updateToolbar);
+    this.hotkeyHandler?.unbind();
     this.editor.domLayer.unregister("floating-toolbar");
   }
 }

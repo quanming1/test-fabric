@@ -28,7 +28,10 @@ export const Easing = {
 };
 
 /**
- * 计算所有对象的包围盒
+ * 计算所有对象的包围盒（场景坐标）
+ * 
+ * 使用 getCoords() 获取对象四个角的场景坐标，
+ * 这样计算出的边界不受 viewportTransform 影响。
  */
 export function calculateBounds(objects: FabricObject[]): BoundingBox | null {
     if (objects.length === 0) return null;
@@ -39,11 +42,14 @@ export function calculateBounds(objects: FabricObject[]): BoundingBox | null {
     let maxY = -Infinity;
 
     objects.forEach((obj) => {
-        const rect = obj.getBoundingRect();
-        minX = Math.min(minX, rect.left);
-        minY = Math.min(minY, rect.top);
-        maxX = Math.max(maxX, rect.left + rect.width);
-        maxY = Math.max(maxY, rect.top + rect.height);
+        // getCoords() 返回四个角的场景坐标（不受 viewportTransform 影响）
+        const coords = obj.getCoords();
+        for (const pt of coords) {
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+        }
     });
 
     return {

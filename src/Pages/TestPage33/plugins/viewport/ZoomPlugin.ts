@@ -118,6 +118,11 @@ export class ZoomPlugin extends BasePlugin {
 
   /**
    * 适配视图：将所有元素居中显示
+   * 
+   * 计算逻辑：
+   * 1. 获取所有对象的场景坐标边界
+   * 2. 计算能容纳边界的最佳缩放比例
+   * 3. 计算使边界中心对齐画布中心的 viewportTransform
    */
   fitToView(options?: FitViewOptions): void {
     const opts = {
@@ -139,37 +144,47 @@ export class ZoomPlugin extends BasePlugin {
     const canvasHeight = this.canvas.getHeight();
     const padding = opts.padding;
 
+    // 计算能容纳边界的最佳缩放比例
     const scaleX = (canvasWidth - padding * 2) / bounds.width;
     const scaleY = (canvasHeight - padding * 2) / bounds.height;
     let targetZoom = Math.min(scaleX, scaleY);
+    targetZoom = Math.max(this.minZoom, Math.min(this.maxZoom, targetZoom));
 
-    targetZoom = Math.min(targetZoom, this.maxZoom);
-    targetZoom = Math.max(targetZoom, this.minZoom);
-
+    // 边界中心（场景坐标）
     const centerX = bounds.left + bounds.width / 2;
     const centerY = bounds.top + bounds.height / 2;
 
-    const vpt = this.canvas.viewportTransform;
-    if (vpt) {
-      vpt[4] = canvasWidth / 2 - centerX;
-      vpt[5] = canvasHeight / 2 - centerY;
-      this.canvas.setViewportTransform(vpt);
-    }
+    // 计算 viewportTransform 的平移值
+    // 公式：屏幕坐标 = 场景坐标 * zoom + vpt[4/5]
+    // 要让场景中心显示在画布中心：canvasWidth/2 = centerX * zoom + vptX
+    const targetVptX = canvasWidth / 2 - centerX * targetZoom;
+    const targetVptY = canvasHeight / 2 - centerY * targetZoom;
 
-    const center = { x: canvasWidth / 2, y: canvasHeight / 2 };
+    const vpt = this.canvas.viewportTransform;
+    if (!vpt) return;
+
     if (opts.animation.enabled) {
-      animate(
-        this._zoom,
-        targetZoom,
+      animateMultiple(
+        { zoom: this._zoom, vptX: vpt[4], vptY: vpt[5] },
+        { zoom: targetZoom, vptX: targetVptX, vptY: targetVptY },
         { duration: opts.animation.duration!, easing: opts.animation.easing! },
-        (zoom) => {
-          this.canvas.zoomToPoint(center as any, zoom);
+        ({ zoom, vptX, vptY }) => {
+          vpt[0] = zoom;
+          vpt[3] = zoom;
+          vpt[4] = vptX;
+          vpt[5] = vptY;
+          this.canvas.setViewportTransform(vpt);
           this._zoom = zoom;
         },
         () => this.eventBus.emit("zoom:change", targetZoom)
       );
     } else {
-      this.canvas.zoomToPoint(center as any, targetZoom);
+      // 直接设置最终的 viewportTransform，避免分步操作导致位置错乱
+      vpt[0] = targetZoom;
+      vpt[3] = targetZoom;
+      vpt[4] = targetVptX;
+      vpt[5] = targetVptY;
+      this.canvas.setViewportTransform(vpt);
       this._zoom = targetZoom;
       this.eventBus.emit("zoom:change", targetZoom);
     }
