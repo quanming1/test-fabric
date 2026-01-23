@@ -106,7 +106,7 @@ export class TransformHelper {
     }
 
     /**
-     * 将对象局部坐标转换为画布绝对坐标
+     * 将对象局部坐标转换为画布绝对坐标（场景坐标）
      */
     static localToCanvas(
         canvas: Canvas,
@@ -118,6 +118,37 @@ export class TransformHelper {
         return {
             x: a * localX + c * localY + tx,
             y: b * localX + d * localY + ty,
+        };
+    }
+
+    /**
+     * 将对象局部坐标转换为屏幕坐标
+     * 
+     * 兼容对象处于 ActiveSelection 多选中的情况，
+     * 会正确计算组合变换后的最终屏幕位置。
+     * 
+     * @param canvas 画布实例
+     * @param target 目标对象
+     * @param localX 局部 X 坐标
+     * @param localY 局部 Y 坐标
+     * @returns 屏幕坐标 { x, y }
+     */
+    static localToScreen(
+        canvas: Canvas,
+        target: FabricObject,
+        localX: number,
+        localY: number
+    ): { x: number; y: number } {
+        // 先转换为场景坐标
+        const scenePoint = this.localToCanvas(canvas, target, localX, localY);
+
+        // 再转换为屏幕坐标
+        const vpt = canvas.viewportTransform;
+        if (!vpt) return scenePoint;
+
+        return {
+            x: scenePoint.x * vpt[0] + vpt[4],
+            y: scenePoint.y * vpt[3] + vpt[5],
         };
     }
 

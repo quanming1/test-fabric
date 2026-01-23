@@ -236,6 +236,15 @@ export class ImagePlugin extends BasePlugin {
     return this.exportHandler.exportWithMarkers(imageId, markers, options);
   }
 
+  /**
+   * 获取指定图片标签的屏幕坐标信息
+   * @param imageId 图片 ID
+   * @returns 标签屏幕坐标信息，如果标签不存在返回 null
+   */
+  getLabelScreenInfo(imageId: string) {
+    return this.labelRenderer.getLabelScreenInfo(imageId);
+  }
+
   // ─── 模式切换 ─────────────────────────────────────────
 
   /** 模式变化 - 更新所有图片的交互状态 */

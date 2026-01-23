@@ -1,6 +1,7 @@
 import { FabricText, Group, type Canvas, type FabricObject, FabricImage } from "fabric";
 import { BaseRenderer } from "../../../../core/render";
 import { Category, type ObjectMetadata, type ImageObjectData } from "../../../../core";
+import { TransformHelper } from "../../../../utils/TransformHelper";
 
 // ─── 类型定义 ─────────────────────────────────────────
 
@@ -27,6 +28,14 @@ const DEFAULT_LABEL_STYLE: LabelStyle = {
 export interface LabelRenderData {
     id: string;
     target: FabricObject;
+}
+
+/** 标签元素的屏幕坐标信息 */
+export interface LabelScreenInfo {
+    /** 文件名区域 */
+    filename: { left: number; right: number; top: number; bottom: number };
+    /** 尺寸区域 */
+    dimensions: { left: number; right: number; top: number; bottom: number };
 }
 
 // ─── 渲染器实现 ─────────────────────────────────────────
@@ -153,6 +162,52 @@ export class ImageLabelRenderer extends BaseRenderer<LabelRenderData, LabelStyle
         for (const group of this.objects.values()) {
             this.canvas.bringObjectToFront(group);
         }
+    }
+
+    /**
+     * 获取指定图片标签的屏幕坐标信息
+     * @param id 图片 ID
+     * @returns 标签屏幕坐标信息，如果标签不存在返回 null
+     */
+    getLabelScreenInfo(id: string): LabelScreenInfo | null {
+        const group = this.objects.get(id);
+        if (!group) return null;
+
+        const filenameText = group.item(0) as FabricText;
+        const dimensionsText = group.item(1) as FabricText;
+
+        const fnWidth = filenameText.width || 0;
+        const fnHeight = this.style.fontSize;
+        const dimWidth = dimensionsText.width || 0;
+        const dimHeight = this.style.fontSize;
+
+        // 使用 TransformHelper 将局部坐标直接转换为屏幕坐标
+        // 文件名左上角和右下角
+        const fnLocalLeft = filenameText.left || 0;
+        const fnLocalTop = filenameText.top || 0;
+        const fnTopLeft = TransformHelper.localToScreen(this.canvas, group, fnLocalLeft, fnLocalTop);
+        const fnBottomRight = TransformHelper.localToScreen(this.canvas, group, fnLocalLeft + fnWidth, fnLocalTop + fnHeight);
+
+        // 尺寸左上角和右下角（originX=right，所以实际左边界是 left - width）
+        const dimLocalLeft = (dimensionsText.left || 0) - dimWidth;
+        const dimLocalTop = dimensionsText.top || 0;
+        const dimTopLeft = TransformHelper.localToScreen(this.canvas, group, dimLocalLeft, dimLocalTop);
+        const dimBottomRight = TransformHelper.localToScreen(this.canvas, group, dimLocalLeft + dimWidth, dimLocalTop + dimHeight);
+
+        return {
+            filename: {
+                left: fnTopLeft.x,
+                right: fnBottomRight.x,
+                top: fnTopLeft.y,
+                bottom: fnBottomRight.y,
+            },
+            dimensions: {
+                left: dimTopLeft.x,
+                right: dimBottomRight.x,
+                top: dimTopLeft.y,
+                bottom: dimBottomRight.y,
+            },
+        };
     }
 
     clear(): void {

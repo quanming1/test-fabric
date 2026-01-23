@@ -1,6 +1,6 @@
 import { type FabricObject, ActiveSelection } from "fabric";
 import { BasePlugin } from "../base/Plugin";
-import { Category } from "../../core";
+import { Category, CoordinateHelper } from "../../core";
 import type { ToolbarPosition } from "../../core/types";
 import type { DrawPlugin } from "../draw/DrawPlugin";
 import type { ImagePlugin } from "../object/image/ImagePlugin";
@@ -31,8 +31,6 @@ export class SelectionPlugin extends BasePlugin {
   private hotkeyHandler: SelectionHotkeyHandler | null = null;
   /** 工具栏宽度（由 FloatingToolbar 组件测量后设置） */
   private toolbarWidth = 72;
-  /** 标签区域预留宽度 */
-  private static readonly LABEL_RESERVED_WIDTH = 120;
 
   /** 当前选中对象（单选或 ActiveSelection） */
   get selected(): FabricObject | null {
@@ -121,28 +119,58 @@ export class SelectionPlugin extends BasePlugin {
     const vpt = this.canvas.viewportTransform;
     if (!vpt) return;
 
-    // getBoundingRect() 返回的已经是屏幕坐标，无需再转换
+    const coordHelper = new CoordinateHelper(vpt);
     const boundingRect = this.activeObject.getBoundingRect();
-    const screenWidth = boundingRect.width;
+    const topLeft = coordHelper.sceneToScreen({ x: boundingRect.left, y: boundingRect.top });
+    const screenWidth = boundingRect.width * vpt[0];
 
-    let x = boundingRect.left + screenWidth / 2;
-    const y = boundingRect.top - this.config.toolbarOffsetY;
+    // 默认居中位置
+    let x = topLeft.x + screenWidth / 2;
+    const y = topLeft.y - this.config.toolbarOffsetY;
 
-    if (this.shouldAlignRight(screenWidth)) {
-      x = boundingRect.left + screenWidth + this.toolbarWidth / 2;
+    // 检测是否需要右对齐（传入居中时的坐标）
+    if (this.shouldAlignRight(screenWidth, x, y)) {
+      x = topLeft.x + screenWidth + this.toolbarWidth / 2;
     }
 
     const pos: ToolbarPosition = { x, y, visible: true };
     this.eventBus.emit("toolbar:update", pos);
   };
 
-  private shouldAlignRight(screenWidth: number): boolean {
+  private shouldAlignRight(screenWidth: number, toolbarX: number, toolbarY: number): boolean {
     if (this.isMultiSelection) return false;
     const meta = this.editor.metadata.get(this.activeObject!);
     if (meta?.category !== Category.Image) return false;
+
+    // 获取标签的屏幕坐标信息
+    const imagePlugin = this.editor.getPlugin<ImagePlugin>("image");
+    const labelInfo = imagePlugin?.getLabelScreenInfo(meta.id!);
+    if (!labelInfo) return false;
+
+    // 工具栏居中时的屏幕矩形（x 是中心点，需要计算左右边界）
     const toolbarHalfWidth = this.toolbarWidth / 2;
-    const toolbarLeftOffset = screenWidth / 2 - toolbarHalfWidth;
-    return toolbarLeftOffset < SelectionPlugin.LABEL_RESERVED_WIDTH;
+    const toolbarHeight = 32; // 工具栏大概高度
+    const toolbarRect = {
+      left: toolbarX - toolbarHalfWidth,
+      right: toolbarX + toolbarHalfWidth,
+      top: toolbarY - toolbarHeight,
+      bottom: toolbarY,
+    };
+
+    // 检测工具栏是否与文件名或尺寸区域相交
+    const intersects = (
+      rect1: { left: number; right: number; top: number; bottom: number },
+      rect2: { left: number; right: number; top: number; bottom: number }
+    ) => {
+      return !(
+        rect1.right < rect2.left ||
+        rect1.left > rect2.right ||
+        rect1.bottom < rect2.top ||
+        rect1.top > rect2.bottom
+      );
+    };
+
+    return intersects(toolbarRect, labelInfo.filename) || intersects(toolbarRect, labelInfo.dimensions);
   }
 
   /** 将一组对象设置为当前选中 */
