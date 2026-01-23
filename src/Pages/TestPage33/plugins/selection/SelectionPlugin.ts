@@ -14,7 +14,7 @@ interface SelectionConfig {
 }
 
 const DEFAULT_CONFIG: SelectionConfig = {
-  toolbarOffsetY: 10,
+  toolbarOffsetY: 12,
 };
 
 /**
@@ -99,6 +99,16 @@ export class SelectionPlugin extends BasePlugin {
     this.updateToolbar();
   };
 
+  /** 工具栏宽度（由 FloatingToolbar 组件测量后设置） */
+  private toolbarWidth = 72;
+  /** 标签区域预留宽度（文件名 + 尺寸信息的最小显示宽度） */
+  private static readonly LABEL_RESERVED_WIDTH = 120;
+
+  /** 设置工具栏宽度（由 FloatingToolbar 组件调用） */
+  setToolbarWidth(width: number): void {
+    this.toolbarWidth = width;
+  }
+
   private updateToolbar = (): void => {
     if (!this.activeObject) {
       this.eventBus.emit("toolbar:update", { x: 0, y: 0, visible: false });
@@ -111,15 +121,42 @@ export class SelectionPlugin extends BasePlugin {
     const coordHelper = new CoordinateHelper(vpt);
     const boundingRect = this.activeObject.getBoundingRect();
     const topLeft = coordHelper.sceneToScreen({ x: boundingRect.left, y: boundingRect.top });
+    const screenWidth = boundingRect.width * vpt[0];
 
-    const pos: ToolbarPosition = {
-      x: topLeft.x + (boundingRect.width * vpt[0]) / 2,
-      y: topLeft.y - this.config.toolbarOffsetY,
-      visible: true,
-    };
+    // 默认居中位置
+    let x = topLeft.x + screenWidth / 2;
+    const y = topLeft.y - this.config.toolbarOffsetY;
 
+    // 判断是否需要右对齐（避免遮挡图片标签）
+    // 条件：单选图片时，工具栏居中会遮挡左侧标签区域
+    if (this.shouldAlignRight(screenWidth)) {
+      // 工具栏左边缘对齐图片右边缘：x = 图片右边界 + 工具栏半宽（因为 transform: translate(-50%)）
+      x = topLeft.x + screenWidth + this.toolbarWidth / 2;
+    }
+
+    const pos: ToolbarPosition = { x, y, visible: true };
     this.eventBus.emit("toolbar:update", pos);
   };
+
+  /**
+   * 判断工具栏是否应该右对齐
+   * 当单选图片且工具栏居中会遮挡标签时返回 true
+   */
+  private shouldAlignRight(screenWidth: number): boolean {
+    // 只有单选时才考虑（多选没有标签）
+    if (this.isMultiSelection) return false;
+
+    // 检查是否是图片类型
+    const meta = this.editor.metadata.get(this.activeObject!);
+    if (meta?.category !== Category.Image) return false;
+
+    // 计算工具栏居中时的左边界距离图片左边界的距离
+    const toolbarHalfWidth = this.toolbarWidth / 2;
+    const toolbarLeftOffset = screenWidth / 2 - toolbarHalfWidth;
+
+    // 如果工具栏左边界侵入标签预留区域，则需要右对齐
+    return toolbarLeftOffset < SelectionPlugin.LABEL_RESERVED_WIDTH;
+  }
 
   /** 将一组对象设置为当前选中（支持多选/单选）；传空数组则不做任何事 */
   private setSelection(objects: FabricObject[]): void {

@@ -35,11 +35,13 @@ export type SyncEventData = ObjectExportData & {
  */
 export interface SyncEventItem {
     /** 操作的对象 ID */
-    id: string;
+    element_id: string;
     /** 事件类型 */
     event_type: SyncEventType;
     /** 事件数据 */
     event_data: SyncEventData;
+    // 版本，主要是在返回全量数据的时候后端会带上这个字段，前端在派发event的时候 不用设置这个字段
+    sequence_id?: string
 }
 
 

@@ -31,7 +31,7 @@ export function useCanvasEditor(
     editorInstance
       .use(new ModePlugin())
       .use(new ZoomPlugin())
-      .use(new SelectionPlugin({ toolbarOffsetY: 25 }))
+      .use(new SelectionPlugin({ toolbarOffsetY: 12 }))
       .use(new DrawPlugin())
       .use(new MarkerPlugin())
       .use(new ImagePlugin())

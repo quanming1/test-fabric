@@ -276,7 +276,7 @@ export class SyncManager {
                     for (const snapshot of record.before) {
                         const exportData = snapshot.data as ImageExportData;
                         events.push({
-                            id: snapshot.id,
+                            element_id: snapshot.id,
                             event_type: "client:change",
                             event_data: {
                                 ...exportData,
@@ -295,7 +295,7 @@ export class SyncManager {
                     for (const snapshot of record.after) {
                         const exportData = snapshot.data as ImageExportData;
                         events.push({
-                            id: snapshot.id,
+                            element_id: snapshot.id,
                             event_type: "client:change",
                             event_data: {
                                 ...exportData,

@@ -1,10 +1,5 @@
-import React from "react";
-import {
-  CopyOutlined,
-  DeleteOutlined,
-  VerticalAlignTopOutlined,
-  VerticalAlignBottomOutlined,
-} from "@ant-design/icons";
+import React, { useRef, useEffect } from "react";
+import { DownloadOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { ToolbarPosition, DOMLayerProps } from "../../core";
 import { useEditorEvent } from "../../hooks";
 import type { SelectionPlugin } from "./SelectionPlugin";
@@ -19,17 +14,22 @@ const initialPos: ToolbarPosition = { x: 0, y: 0, visible: false };
 export const FloatingToolbar: React.FC<DOMLayerProps> = ({ editor }) => {
   const pos = useEditorEvent(editor, "toolbar:update", initialPos);
   const selectionPlugin = editor?.getPlugin<SelectionPlugin>("selection");
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const hasMeasured = useRef(false);
 
-  const handleClone = async () => {
-    await selectionPlugin?.cloneSelected();
-  };
+  // 工具栏可见时测量宽度并通知插件（只测量一次）
+  useEffect(() => {
+    if (pos.visible && toolbarRef.current && selectionPlugin && !hasMeasured.current) {
+      const width = toolbarRef.current.offsetWidth;
+      if (width > 0) {
+        selectionPlugin.setToolbarWidth(width);
+        hasMeasured.current = true;
+      }
+    }
+  }, [pos.visible, selectionPlugin]);
 
-  const handleBringToFront = () => {
-    selectionPlugin?.bringToFront();
-  };
-
-  const handleSendToBack = () => {
-    selectionPlugin?.sendToBack();
+  const handleDownload = () => {
+    // TODO: 实现下载功能
   };
 
   const handleDelete = async () => {
@@ -38,6 +38,7 @@ export const FloatingToolbar: React.FC<DOMLayerProps> = ({ editor }) => {
 
   return (
     <div
+      ref={toolbarRef}
       className={styles.floatingToolbar}
       style={{
         left: pos.x,
@@ -45,16 +46,9 @@ export const FloatingToolbar: React.FC<DOMLayerProps> = ({ editor }) => {
         display: pos.visible ? "flex" : "none",
       }}
     >
-      <button className={styles.floatingBtn} onClick={handleClone} title="复制">
-        <CopyOutlined />
+      <button className={styles.floatingBtn} onClick={handleDownload} title="下载">
+        <DownloadOutlined />
       </button>
-      <button className={styles.floatingBtn} onClick={handleBringToFront} title="置顶">
-        <VerticalAlignTopOutlined />
-      </button>
-      <button className={styles.floatingBtn} onClick={handleSendToBack} title="置底">
-        <VerticalAlignBottomOutlined />
-      </button>
-      <div className={styles.floatingDivider} />
       <button
         className={`${styles.floatingBtn} ${styles.danger}`}
         onClick={handleDelete}
