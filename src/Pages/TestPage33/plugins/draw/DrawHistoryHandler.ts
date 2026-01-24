@@ -213,8 +213,9 @@ export class DrawHistoryHandler extends BaseHistoryHandler<FabricObject> {
 
             const markerPlugin = this.markerPlugin;
             if (markerPlugin) {
-                const markers = snapshot.data._markers as PointData[] | undefined;
-                const regions = snapshot.data._regions as RegionData[] | undefined;
+                const snapshotData = snapshot.data as Record<string, unknown>;
+                const markers = snapshotData._markers as PointData[] | undefined;
+                const regions = snapshotData._regions as RegionData[] | undefined;
                 if (markers && markers.length > 0) {
                     markerPlugin.loadPoints([
                         ...markerPlugin.getPointsData(),

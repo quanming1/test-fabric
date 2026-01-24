@@ -2,7 +2,7 @@ import {
     Category,
     EventBus,
     type CanvasEditor,
-} from "src/Pages/TestPage33/core";
+} from "../../../../core";
 import { type FabricObject, type TPointerEventInfo, type TPointerEvent } from "fabric";
 
 /** MarkerPluginState 事件类型定义 */

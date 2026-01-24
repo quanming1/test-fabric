@@ -4,11 +4,11 @@ import Page222 from "../Pages/page222";
 
 const router = createBrowserRouter([
   {
-    path: "/fabric-basic",
+    path: "/",
     element: <TestPage33 />,
   },
   {
-    path: "/page222",
+    path: "/video-test",
     element: <Page222 />,
   },
 ]);

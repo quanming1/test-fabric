@@ -105,3 +105,57 @@ export interface SyncManagerOptions {
     /** SSE 连接地址 */
     sseUrl?: string;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Handler 相关类型
+// ═══════════════════════════════════════════════════════════════
+
+import type { HistoryRecord } from "../history/types";
+import type { CanvasEditor } from "../editor/CanvasEditor";
+
+/**
+ * 客户端变更事件数据
+ */
+export interface ClientChangeData extends SyncEventData {
+    clientId: string;
+    snapshot: HistoryRecord | HistoryRecord[];
+}
+
+/**
+ * 服务端添加图片事件数据
+ */
+export interface ServerAddImageData extends SyncEventData {
+    urls: string[];
+}
+
+/**
+ * Handler 命名空间
+ */
+export namespace Handler {
+    /**
+     * 事件包装类型
+     */
+    export interface Event<T extends SyncEventData = SyncEventData> {
+        seq?: number;
+        eventType: SyncEventType;
+        data: T;
+    }
+
+    /**
+     * 处理器上下文
+     */
+    export interface Context {
+        editor: CanvasEditor;
+        clientId: string;
+        applySnapshot: (snapshot: HistoryRecord | HistoryRecord[]) => Promise<void>;
+    }
+
+    /**
+     * 处理器接口
+     */
+    export interface IHandler<T extends SyncEventData = SyncEventData> {
+        readonly eventType: SyncEventType;
+        handle(event: Event<T>, context: Context): Promise<void>;
+        toRecords?(event: Event<T>): HistoryRecord[];
+    }
+}
